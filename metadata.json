@@ -1,0 +1,6 @@
+{
+  "name": "OpenTerminal — Web Financial Terminal & Market Dashboard",
+  "description": "Keyboard-first, modular Bloomberg-grade financial terminal dashboard with live multi-asset market data, interactive charts, and command execution.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

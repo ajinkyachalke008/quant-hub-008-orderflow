@@ -1,0 +1,6 @@
+{
+  "summary": "Comprehensive architectural implementation plan for OpenTerminal's institutional-grade XAU/USD trading suite and multi-asset macro matrix, featuring live Pyth Hermes SSE and Binance streaming, 1:50 margin paper trading engine, Volume Profile Visible Range (VPVR), position sizing calculator, Web Audio terminal chimes, and multi-timeframe dual-pane workspace.",
+  "updatedAt": "2026-11-04T11:17:32.647572140Z",
+  "requestFeedback": true,
+  "userFacing": true
+}

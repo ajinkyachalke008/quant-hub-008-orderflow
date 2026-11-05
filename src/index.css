@@ -1,0 +1,132 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* Default: Hybrid Pro Theme */
+  --ot-bg-root: #07090e;
+  --ot-bg-surface: #0e131f;
+  --ot-bg-panel: #111622;
+  --ot-bg-hover: #171f30;
+  --ot-border: rgba(255, 255, 255, 0.08);
+  --ot-border-focus: #00f0ff;
+  --ot-text-primary: #f1f5f9;
+  --ot-text-secondary: #94a3b8;
+  --ot-text-muted: #64748b;
+  --ot-amber: #ffb000;
+  --ot-cyan: #00f0ff;
+  --ot-profit: #00e676;
+  --ot-loss: #ff3b30;
+  --ot-accent: #00f0ff;
+  --ot-glow: none;
+}
+
+/* Bloomberg Theme */
+[data-theme="bloomberg"] {
+  --ot-bg-root: #040404;
+  --ot-bg-surface: #0a0b0d;
+  --ot-bg-panel: #0f1115;
+  --ot-bg-hover: #191c22;
+  --ot-border: #262930;
+  --ot-border-focus: #ff9900;
+  --ot-text-primary: #ff9900;
+  --ot-text-secondary: #d18200;
+  --ot-text-muted: #754f15;
+  --ot-amber: #ff9900;
+  --ot-cyan: #ffaa22;
+  --ot-profit: #00ff66;
+  --ot-loss: #ff3333;
+  --ot-accent: #ff9900;
+  --ot-glow: 0 0 2px rgba(255, 153, 0, 0.4);
+}
+
+/* Wall Street Slate Theme */
+[data-theme="wallstreet"] {
+  --ot-bg-root: #0a0f18;
+  --ot-bg-surface: #0f1726;
+  --ot-bg-panel: #152033;
+  --ot-bg-hover: #1c2b44;
+  --ot-border: #1e2e4a;
+  --ot-border-focus: #38bdf8;
+  --ot-text-primary: #f8fafc;
+  --ot-text-secondary: #94a3b8;
+  --ot-text-muted: #475569;
+  --ot-amber: #38bdf8;
+  --ot-cyan: #0284c7;
+  --ot-profit: #10b981;
+  --ot-loss: #f43f5e;
+  --ot-accent: #38bdf8;
+  --ot-glow: none;
+}
+
+/* Retro CRT Green Phosphor Theme */
+[data-theme="retro"] {
+  --ot-bg-root: #020a03;
+  --ot-bg-surface: #041407;
+  --ot-bg-panel: #07220c;
+  --ot-bg-hover: #0b3313;
+  --ot-border: #0f481a;
+  --ot-border-focus: #33ff33;
+  --ot-text-primary: #33ff33;
+  --ot-text-secondary: #22b822;
+  --ot-text-muted: #146e16;
+  --ot-amber: #33ff33;
+  --ot-cyan: #55ff55;
+  --ot-profit: #33ff33;
+  --ot-loss: #ff4444;
+  --ot-accent: #33ff33;
+  --ot-glow: 0 0 4px rgba(51, 255, 51, 0.6);
+}
+
+body {
+  margin: 0;
+  background-color: var(--ot-bg-root);
+  color: var(--ot-text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* CRT Scanlines Overlay */
+.crt-scanlines::after {
+  content: " ";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.28) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+  z-index: 9999;
+  background-size: 100% 3px, 6px 100%;
+  pointer-events: none;
+  opacity: 0.65;
+}
+
+.crt-vignette::before {
+  content: " ";
+  display: block;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  box-shadow: inset 0 0 100px rgba(0, 0, 0, 0.8);
+  z-index: 9998;
+  pointer-events: none;
+}
+
+/* Custom Scrollbar for Terminal Panels */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--ot-border);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ot-text-muted);
+}
