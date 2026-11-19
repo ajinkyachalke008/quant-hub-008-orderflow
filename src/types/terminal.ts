@@ -221,7 +221,8 @@ export type WidgetId =
   | 'wasm-matching'
   | 'portfolio-var'
   | 'fix-session'
-  | 'subaccount-risk';
+  | 'subaccount-risk'
+  | 'order-flow';
 
 export interface WidgetConfig {
   id: WidgetId;
@@ -761,4 +762,6 @@ export interface EmergencyPanicAuditLog {
   checksum: string;
   initiator: string;
 }
+
+
 

@@ -34,6 +34,7 @@ import { WasmMatchingEngineWidget } from './widgets/WasmMatchingEngineWidget';
 import { PortfolioRiskWidget } from './widgets/PortfolioRiskWidget';
 import { FixSessionManager } from './widgets/FixSessionManager';
 import { SubAccountRiskWidget } from './widgets/SubAccountRiskWidget';
+import { OrderFlowTerminalWidget } from './widgets/OrderFlowTerminalWidget';
 
 import { layoutManagerService } from '../services/layoutManagerService';
 import { algoTradingEngine } from '../services/algoTradingEngine';
@@ -73,6 +74,7 @@ export const Workspace: React.FC = () => {
     | 'varrisk'
     | 'fixsession'
     | 'subaccount'
+    | 'orderflow'
   >('grid');
 
   const [floatingPanes, setFloatingPanes] = useState<FloatingPaneState[]>(() => layoutManagerService.getFloatingPanes());
@@ -314,6 +316,18 @@ export const Workspace: React.FC = () => {
             <Monitor className="w-3.5 h-3.5" />
             <span>PRESETS</span>
           </button>
+
+          <button
+            onClick={() => setActiveWorkspaceTab('orderflow')}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded transition-all text-[11px] ${
+              activeWorkspaceTab === 'orderflow'
+                ? 'bg-[var(--ot-accent)]/20 text-[var(--ot-accent)] font-bold border border-[var(--ot-accent)]/50'
+                : 'text-[var(--text-muted)] hover:text-[var(--text-color)]'
+            }`}
+          >
+            <Activity className="w-3.5 h-3.5" />
+            <span>ORDER FLOW</span>
+          </button>
         </div>
       </div>
 
@@ -513,3 +527,8 @@ export const Workspace: React.FC = () => {
     </div>
   );
 };
+
+
+
+
+

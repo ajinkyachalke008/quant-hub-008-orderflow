@@ -72,6 +72,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'heatmap', title: 'Sector Heatmap', visible: true, minimized: false, maximized: false },
   { id: 'cli', title: 'Terminal Command Console', visible: true, minimized: false, maximized: false },
   { id: 'crypto-ticker', title: 'Floating Crypto Ticker', visible: true, minimized: false, maximized: false },
+  { id: 'order-flow', title: 'Order Flow Terminal', visible: true, minimized: false, maximized: false },
 ];
 
 const TerminalContext = createContext<TerminalContextValue | undefined>(undefined);
@@ -422,3 +423,5 @@ export function useTerminal() {
   }
   return ctx;
 }
+
+

@@ -44,10 +44,10 @@ export const Sidebar: React.FC = () => {
   const layoutWidgetMap: Record<LayoutMode, string[]> = {
     xauusd: ['chart', 'xau-telemetry', 'xau-orderbook', 'watchlist', 'macro', 'news', 'cli', 'crypto-ticker'],
     trading: ['chart', 'quote', 'watchlist', 'screener', 'cli', 'crypto-ticker'],
-    crypto: ['crypto', 'chart', 'news', 'heatmap', 'cli', 'crypto-ticker'],
+    crypto: ['crypto', 'chart', 'news', 'heatmap', 'cli', 'crypto-ticker', 'order-flow'],
     macro: ['macro', 'chart', 'quote', 'news', 'cli', 'crypto-ticker'],
     'cli-focused': ['cli', 'chart', 'quote', 'watchlist', 'crypto-ticker'],
-    default: ['chart', 'quote', 'watchlist', 'news', 'macro', 'crypto', 'screener', 'heatmap', 'cli', 'crypto-ticker'],
+    default: ['chart', 'quote', 'watchlist', 'news', 'macro', 'crypto', 'screener', 'heatmap', 'cli', 'crypto-ticker', 'order-flow'],
   };
 
   const handleLayoutSelect = (id: LayoutMode) => {
@@ -333,3 +333,4 @@ export const Sidebar: React.FC = () => {
     </aside>
   );
 };
+
