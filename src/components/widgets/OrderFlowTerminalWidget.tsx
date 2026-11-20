@@ -6,7 +6,7 @@ import { FootprintCanvas } from './FootprintCanvas';
 import { TradeTape } from './TradeTape';
 import { OrderBookLadder } from './OrderBookLadder';
 import { DecisionPanel } from '../widg e s/DecisionPanel';
-import { DangerMeter } from '../widg e s/ DangerMeter';
+import { DangerMeter } from '../widg e s/DangerMeter';
 import { LiquidationFeed } from '../widg e s/LiquidationFeed';
 import { RegimeBadge } from '../widg es/RegimeBadge';
 import { WhaleFeed } from '../widg es/WhaleFeed';
