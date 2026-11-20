@@ -11,6 +11,10 @@ import { LiquidationFeed } from '../widg e s/LiquidationFeed';
 import { RegimeBadge } from '../widg es/RegimeBadge';
 import { WhaleFeed } from '../widg es/WhaleFeed';
 import { useOrderFlowStore } from '../../stores/orderFlowStore';
+import { GEXPanel } from './GEXPanel';
+import { OptionsChain } from '../widg e s/OptionsChain';
+import { CrossExchangeSpread } from './CrossExchangeSpread';
+import { OHLCVChart } from './OHLCVChart';
 
 const SYMBOLS = ['BTCUSDT', 'ETHUSDT'];
 
@@ -67,6 +71,10 @@ export const OrderFlowTerminalWidget: React.FC = () => {
           <div className="min-h-0 overflow-auto" style={{ flex: '1 1 0', minHeight: 160 }}><WhaleFeed /></div>
           <div className="min-h-0" style={{ flex: '1 1 0', minHeight: 160 }}><LiquidationFeed /></div>
         </div>
+      </div>
+      <div style={{ borderTop: '1px solid var(--ot-border)', padding: 8, display: 'flex', gap: 8 }}>
+        <GEXPanel />
+        <OptionsChain options={[]} />
       </div>
       <div style={{ height: bottomCollapsed ? 48 : 200, borderTop: '1px solid var(--ot-border)' }}>
         <button aria-pressed={bottomCollapsed} onClick={() => setBottomCollapsed((v) => !v)} style={{ width: '100%', height: 48 }}>Toggle Bottom</button>
