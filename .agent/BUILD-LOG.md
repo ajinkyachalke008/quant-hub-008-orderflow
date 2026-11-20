@@ -24,6 +24,7 @@
 | Stage 5 â€” Phase 2 | DONE | <ul><li>[ ] GEX panel</li><li>[ ] options chain</li><li>[ ] Bybit fallback</li><li>[ ] historical scroll</li><li>[ ] cross-exchange spread</li><li>[ ] OHLCV lightweight-charts view</li></ul> |
 
 ## Session Log (newest first)
+- **2026-11-20:** Rewrote README.md (280 lines, up from 181) -- full detail on all stages 0-5, 27 order-flow files grouped by MVP and Phase 2, 6-layer architecture, confirmed constants table, data sources, tech stack, build/run commands, 4 additive integration edits, research source, India WS blocker with REST price evidence, 6-commit git history, MIT license. Pushed as commit d38c1d0.
 - **2026-11-20:** Fixed DangerMeter.tsx filename — removed leading space from `widg e s/ DangerMeter.tsx` → `widg e s/DangerMeter.tsx`, fixed import path in OrderFlowTerminalWidget.tsx. Build passes. Pushed as commit a26693b.
 - **2026-11-20:** Fixed DangerMeter.tsx filename — removed leading space from `widg e s/ DangerMeter.tsx` ? `widg e s/DangerMeter.tsx`, fixed import path in OrderFlowTerminalWidget.tsx. Build passes. Pushed as commit a26693b.
 - **2026-11-20:** Enhanced OptionsChain.tsx â€” added expiry filter (unique expiries derived from options array, pill filter row), proper â–²/â–¼ sort indicators, IV color coding (>60% red, 40-60% amber, <40% green), OI color coding (>1000 cyan), summary row (Call OI, Put OI, ATM IV from underlyingPrice prop), scroll container (maxHeight 400px). Build passes. Pushed as commit 427873d.
