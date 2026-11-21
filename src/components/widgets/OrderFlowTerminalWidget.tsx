@@ -37,7 +37,7 @@ export const OrderFlowTerminalWidget: React.FC = () => {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const feedOk = Object.values(feedStates).every((v) => v === 'CONNECTED' || v === 'LIVE');
+  const feedOk = Object.values(feedStates).every((v) => v === 'CONNECTING' || v === 'LIVE');
 
   return (
     <div aria-label="Order Flow Terminal" className="flex flex-col h-full w-full min-h-0" style={{ backgroundColor: 'var(--ot-bg-panel)', border: '1px solid var(--ot-border)', color: 'var(--ot-text-primary)' }}>
@@ -84,3 +84,4 @@ export const OrderFlowTerminalWidget: React.FC = () => {
     </div>
   );
 };
+

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { createChart, CandlestickSeries, LineSeries, HistogramSeries } from 'lightweight-charts';
+import { createChart } from 'lightweight-charts';
 import { useOrderFlowStore } from '../../stores/orderFlowStore';
 
 export const OHLCVChart: React.FC = () => {
@@ -31,9 +31,9 @@ export const OHLCVChart: React.FC = () => {
       vwapDen += t.qty;
     }
 
-    const cs = chart.addSeries(CandlestickSeries, { upColor: 'var(--ot-profit)', downColor: 'var(--ot-loss)', borderVisible: false, wickUpColor: 'var(--ot-profit)', wickDownColor: 'var(--ot-loss)' });
-    const vwap = chart.addSeries(LineSeries, { color: 'var(--ot-amber)', lineWidth: 2 });
-    const cvd = chart.addSeries(HistogramSeries, { color: 'var(--ot-cyan)' });
+    const cs = chart.addCandlestickSeries({ upColor: 'var(--ot-profit)', downColor: 'var(--ot-loss)', borderVisible: false, wickUpColor: 'var(--ot-profit)', wickDownColor: 'var(--ot-loss)' });
+    const vwap = chart.addLineSeries({ color: 'var(--ot-amber)', lineWidth: 2 });
+    const cvd = chart.addHistogramSeries({ color: 'var(--ot-cyan)' });
 
     const sorted = [...candles.entries()].sort((a, b) => a[0] - b[0]);
     cs.setData(sorted.map(([time, c]) => ({ time: time as any, open: c.open, high: c.high, low: c.low, close: c.close })));
@@ -49,7 +49,7 @@ export const OHLCVChart: React.FC = () => {
     return () => { window.removeEventListener('resize', onResize); chart.remove(); };
   }, [trades]);
 
-  const feedOk = Object.values(feedStates).every((v) => v === 'CONNECTED' || v === 'LIVE');
+  const feedOk = Object.values(feedStates).every((v) => v === 'CONNECTING' || v === 'LIVE');
 
   if (trades.length === 0) {
     return (
@@ -69,3 +69,4 @@ export const OHLCVChart: React.FC = () => {
     </div>
   );
 };
+

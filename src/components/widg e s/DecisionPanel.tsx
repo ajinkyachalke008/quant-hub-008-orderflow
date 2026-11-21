@@ -25,7 +25,7 @@ export function DecisionPanel() {
     );
   }
 
-  const feedOk = Object.values(feedStates).every((v) => v === "CONNECTED" || v === "LIVE");
+  const feedOk = Object.values(feedStates).every((v) => v === "CONNECTING" || v === "LIVE");
 
   return (
     <div style={{ background: "var(--ot-bg-panel)", border: "1px solid var(--ot-border)", padding: 16, borderRadius: 8, color: "var(--ot-text-primary)" }}>

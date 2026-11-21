@@ -1,4 +1,4 @@
-ï»¿import { useOrderFlowStore } from "../../stores/orderFlowStore";
+import { useOrderFlowStore } from "../../stores/orderFlowStore";
 import {
   computeDangerLevel,
   isLiquidationBurst,
@@ -39,7 +39,7 @@ export function DangerMeter() {
   const burst = isLiquidationBurst(liq60s, liqHourlyAvg);
   const computed = computeDangerLevel({ vpinPct, liq60sUsd: liq60s, liqHourlyAvgUsd: liqHourlyAvg, futuresSpotDiffBps: inputs.futuresSpotDiffBps, regime });
   const level = computed.level;
-  const feedOk = Object.values(feedStates).every((v) => v === "CONNECTED" || v === "LIVE");
+  const feedOk = Object.values(feedStates).every((v) => v === "CONNECTING" || v === "LIVE");
 
   return (
     <>
@@ -52,7 +52,7 @@ export function DangerMeter() {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 11, color: "var(--ot-text-secondary)" }}>
           <div>VPIN <span style={{ float: "right", color: vpinColor(vpinPct) }}>{vpinPct === null ? "CALIBRATING" : vpinPct.toFixed(2)}</span></div>
-          <div>Liq burst <span style={{ float: "right", color: burst ? "var(--ot-loss)" : "var(--ot-text-secondary)" }}>{burst ? "BURST" : "ok"} â€” ${liq60s.toLocaleString()} vs ${liqHourlyAvg.toLocaleString()} avg (large ${LIQ_BURST_LARGE_USD.toLocaleString()}, Ã—${LIQ_BURST_MULTIPLIER}, abs ${LIQ_BURST_ABS_USD.toLocaleString()})</span></div>
+          <div>Liq burst <span style={{ float: "right", color: burst ? "var(--ot-loss)" : "var(--ot-text-secondary)" }}>{burst ? "BURST" : "ok"} — ${liq60s.toLocaleString()} vs ${liqHourlyAvg.toLocaleString()} avg (large ${LIQ_BURST_LARGE_USD.toLocaleString()}, ×${LIQ_BURST_MULTIPLIER}, abs ${LIQ_BURST_ABS_USD.toLocaleString()})</span></div>
           <div>Futures-spot <span style={{ float: "right", color: Math.abs(inputs.futuresSpotDiffBps) >= 6 ? "var(--ot-loss)" : "var(--ot-text-secondary)" }}>{inputs.futuresSpotDiffBps.toFixed(1)} bps</span></div>
           <div>Regime <span style={{ float: "right" }}>{regime}</span></div>
           <div>Overall <span style={{ float: "right", color: levelColor(level), fontWeight: 700 }}>{level}</span></div>

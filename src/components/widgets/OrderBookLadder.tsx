@@ -1,4 +1,4 @@
-﻿import React, { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useOrderFlowStore } from '../../stores/orderFlowStore';
 import { FeedState } from '../../types/orderFlow';
 
@@ -26,11 +26,11 @@ export const OrderBookLadder = () => {
   const asks = useMemo(()=>depth?.asks.slice(0,LEVELS)??[],[depth]);
   const maxB = useMemo(()=>bids.reduce((a,b)=>a+b.qty,0)||1,[bids]);
   const maxA = useMemo(()=>asks.reduce((a,b)=>a+b.qty,0)||1,[asks]);
-  const spread = depth?((asks[0]?.price??0)-(bids[0]?.price??0)).toFixed(2):'—';
+  const spread = depth?((asks[0]?.price??0)-(bids[0]?.price??0)).toFixed(2):'�';
   const fs = Object.values(feedStates)[0]??'DISCONNECTED';
 
   if(!depth) return <div style={{padding:16,display:'flex',flexDirection:'column',gap:8}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:600,fontSize:13}}>Order Book</span><FeedBadge s={fs}/></div><div style={{display:'flex',flexDirection:'column',gap:4}}>{[...Array(LEVELS)].map((_,i)=><Skeleton key={i}/>)}</div></div>;
 
   let bc=0,ac=0;
-  return <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:600,fontSize:13}}>Order Book</span><FeedBadge s={fs}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,fontSize:12}}><div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr 2fr',gap:8,paddingBottom:6,fontSize:10,textTransform:'uppercase',color:'var(--ot-text-muted)',fontWeight:600}}><span style={{textAlign:'right'}}><b>BIDS</b></span><span style={{textAlign:'right'}}><b>QTY</b></span><b>CUM</b></div><div style={{display:'flex',flexDirection:'column'}}>{bids.map(x=>{bc+=x.qty;return <LevelRow key={x.p} p={x.p} q={x.q} c={bc} m={maxB} b/>})}</div></div><div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr 2fr',gap:8,paddingBottom:6,fontSize:10,textTransform:'uppercase',color:'var(--ot-text-muted)',fontWeight:600}}><b>ASKS</b><b>QTY</b><b>CUM</b></div><div style={{display:'flex',flexDirection:'column'}}>{asks.map(x=>{ac+=x.qty;return <LevelRow key={x.p} p={x.p} q={x.q} c={ac} m={maxA} b={false}/>})}</div></div></div><div style={{display:'flex',justifyContent:'center',paddingTop:8,fontSize:11,color:'var(--ot-text-muted)',fontVariantNumeric:'tabular-nums'}}><b>Spread:</b> {spread}</div></div>;
+  return <div style={{padding:16,display:'flex',flexDirection:'column',gap:12}}><div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}><span style={{fontWeight:600,fontSize:13}}>Order Book</span><FeedBadge s={fs}/></div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:24,fontSize:12}}><div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr 2fr',gap:8,paddingBottom:6,fontSize:10,textTransform:'uppercase',color:'var(--ot-text-muted)',fontWeight:600}}><span style={{textAlign:'right'}}><b>BIDS</b></span><span style={{textAlign:'right'}}><b>QTY</b></span><b>CUM</b></div><div style={{display:'flex',flexDirection:'column'}}>{bids.map(x=>{bc+=x.qty;return <LevelRow key={x.price} p={x.price} q={x.qty} c={bc} m={maxB} b/>})}</div></div><div><div style={{display:'grid',gridTemplateColumns:'1fr 1fr 2fr',gap:8,paddingBottom:6,fontSize:10,textTransform:'uppercase',color:'var(--ot-text-muted)',fontWeight:600}}><b>ASKS</b><b>QTY</b><b>CUM</b></div><div style={{display:'flex',flexDirection:'column'}}>{asks.map(x=>{ac+=x.qty;return <LevelRow key={x.price} p={x.price} q={x.qty} c={ac} m={maxA} b={false}/>})}</div></div></div><div style={{display:'flex',justifyContent:'center',paddingTop:8,fontSize:11,color:'var(--ot-text-muted)',fontVariantNumeric:'tabular-nums'}}><b>Spread:</b> {spread}</div></div>;
 };

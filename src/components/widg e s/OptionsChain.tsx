@@ -1,4 +1,4 @@
-﻿import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { NormalizedOption } from '../../types/orderFlow';
 
 type Filter = 'all' | 'call' | 'put';
@@ -11,7 +11,7 @@ interface OptionsChainProps {
 export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps) {
   const [filter, setFilter] = useState<Filter>('all');
   const [dir, setDir] = useState<'asc' | 'desc'>('asc');
-  const [expiryFilter, setExpiryFilter] = useState<string>('all');
+  const [expiryFilter, setExpiryFilter] = useState<number | 'all'>('all');
 
   const expiries = useMemo(() => {
     const unique = new Set(options.map((o) => o.expiry));
@@ -63,13 +63,13 @@ export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps
     fontWeight: 600,
     fontSize: 11,
     backgroundColor: 'var(--ot-bg-surface)',
-    borderBottom: 1px solid var(--ot-border),
+    borderBottom: '1px solid var(--ot-border)',
   };
-  const tdStyle = { padding: '7px 10px', color: 'var(--ot-text-primary)', borderBottom: 1px solid var(--ot-border) };
+  const tdStyle = { padding: '7px 10px', color: 'var(--ot-text-primary)', borderBottom: '1px solid var(--ot-border)' };
   const pillStyle = (f: Filter) => ({
     padding: '2px 8px',
     fontSize: 10,
-    border: 1px solid var(--ot-border),
+    border: '1px solid var(--ot-border)',
     backgroundColor: filter === f ? 'var(--ot-bg-hover)' : 'transparent',
     color: 'var(--ot-text-secondary)',
     borderRadius: 4,
@@ -78,7 +78,7 @@ export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps
   const expiryPillStyle = (active: boolean) => ({
     padding: '2px 8px',
     fontSize: 10,
-    border: 1px solid var(--ot-border),
+    border: '1px solid var(--ot-border)',
     backgroundColor: active ? 'var(--ot-bg-hover)' : 'transparent',
     color: 'var(--ot-text-secondary)',
     borderRadius: 4,
@@ -93,11 +93,11 @@ export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps
     );
 
   return (
-    <div style={{ backgroundColor: 'var(--ot-bg-panel)', border: 1px solid var(--ot-border), borderRadius: 8 }}>
+    <div style={{ backgroundColor: 'var(--ot-bg-panel)', border: '1px solid var(--ot-border)', borderRadius: 8 }}>
       <div
         style={{
           padding: '10px 12px',
-          borderBottom: 1px solid var(--ot-border),
+          borderBottom: '1px solid var(--ot-border)',
           display: 'flex',
           alignItems: 'center',
           gap: 10,
@@ -115,7 +115,7 @@ export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps
           OPTIONS CHAIN
         </span>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
-          {['all', 'call', 'put'].map((f) => (
+          {(['all', 'call', 'put'] as const).map((f) => (
             <button key={f} onClick={() => setFilter(f)} style={pillStyle(f)}>
               {f === 'all' ? 'All' : f[0].toUpperCase() + f.slice(1)}
             </button>
@@ -126,7 +126,7 @@ export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps
       <div
         style={{
           padding: '8px 12px',
-          borderBottom: 1px solid var(--ot-border),
+          borderBottom: '1px solid var(--ot-border)',
           display: 'flex',
           alignItems: 'center',
           gap: 8,
@@ -147,7 +147,7 @@ export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps
       <div
         style={{
           padding: '8px 12px',
-          borderBottom: 1px solid var(--ot-border),
+          borderBottom: '1px solid var(--ot-border)',
           backgroundColor: 'var(--ot-bg-surface)',
           display: 'flex',
           alignItems: 'center',
@@ -196,8 +196,8 @@ export function OptionsChain({ options, underlyingPrice = 0 }: OptionsChainProps
           <tbody>
             {filteredOptions.map((o) => (
               <tr
-                key={${o.instrumentName}--}
-                style={{ backgroundColor: rowTint(o.optionType), borderBottom: 1px solid var(--ot-border) }}
+                key={`${o.instrumentName}--`}
+                style={{ backgroundColor: rowTint(o.optionType), borderBottom: '1px solid var(--ot-border)' }}
               >
                 <td style={tdStyle}>{o.instrumentName}</td>
                 <td style={tdStyle}>{o.strike}</td>

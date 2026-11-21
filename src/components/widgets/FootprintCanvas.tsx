@@ -1,4 +1,4 @@
-﻿import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { useOrderFlowStore } from '../../stores/orderFlowStore';
 import { NormalizedTrade, FootprintCandle, FeedState } from '../../types/orderFlow';
 
@@ -29,7 +29,7 @@ function deriveFootprint(trades: NormalizedTrade[]): FootprintCandle[] {
 
 export function FootprintCanvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animationRef = useRef<number>();
+  const animationRef = useRef<number | null>(null);
   const { trades, depth, feedStates } = useOrderFlowStore();
 
   const footprint = useMemo(() => deriveFootprint(trades), [trades]);

@@ -1,4 +1,4 @@
-import { FootprintCandle, FootprintCell } from '../types/orderFlow';
+import { FootprintCandle, FootprintCell } from '../../types/orderFlow';
 
 export interface FootprintRenderOptions {
   canvas: HTMLCanvasElement;

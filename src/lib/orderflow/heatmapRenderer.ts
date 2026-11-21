@@ -1,4 +1,4 @@
-﻿import { HeatmapColumn, HeatmapCell } from '../types/orderFlow';
+import { HeatmapColumn, HeatmapCell } from '../../types/orderFlow';
 
 export interface HeatmapRenderOptions {
   canvas: HTMLCanvasElement;
