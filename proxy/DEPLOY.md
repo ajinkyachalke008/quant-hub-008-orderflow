@@ -1,4 +1,4 @@
-# Deployment Guide — OpenTerminal Order Flow Intelligence
+# Deployment Guide ï¿½ OpenTerminal Order Flow Intelligence
 
 ## Overview
 
@@ -64,14 +64,38 @@ The client adapter auto-detects the proxy:
 
 - WS connection timeout: check region (India/China blocked)
 - SSE not connecting: check CORS headers, firewall rules
-- No data in SSE: check `/api/proxy/status` — proxies should be LIVE
+- No data in SSE: check `/api/proxy/status` ï¿½ proxies should be LIVE
 - Deribit errors: Deribit may rate-limit; check 5s poll interval
 
 ## Security
 
-- No API keys required (all public market data)
-- Consider adding HTTPS (nginx reverse proxy with Let's Encrypt)
-- Consider adding rate limiting for production use
+### CORS
+- The server no longer uses wildcard CORS (`*`).
+- Allowed origins are configured via the `ALLOWED_ORIGINS` env var (comma-separated).
+- If unset, only localhost dev origins are allowed (for local development).
+- Production: set `ALLOWED_ORIGINS=https://your-frontend-domain.com`
+
+### SSE Rate Limiting
+- Max **6 SSE connections per client IP per minute** (configurable via `SseRateLimiter` in `server/security.ts`).
+- Exceeding the limit returns HTTP `429 Too Many Requests`.
+- Max **50 concurrent clients per proxy** (symbol+exchange). Excess connections are rejected cleanly.
+
+### Security Headers (helmet-lite)
+- `X-Content-Type-Options: nosniff`
+- `X-Frame-Options: SAMEORIGIN`
+- `Referrer-Policy: no-referrer`
+- `X-DNS-Prefetch-Control: off`
+- Content-Security-Policy is intentionally NOT set by the app (the SPA + inline charts need a permissive policy); set it at your reverse proxy (nginx) in production.
+
+### Request Body Limit
+- JSON bodies are limited to **1 MB** (`express.json({ limit: '1mb' })`).
+
+### Production Checklist
+- [ ] Set `ALLOWED_ORIGINS` to your real frontend domain(s)
+- [ ] Put nginx (or similar) in front with HTTPS (Let's Encrypt)
+- [ ] Set a strict Content-Security-Policy at the reverse proxy
+- [ ] Enable a firewall allowing only 80/443 inbound
+- [ ] Consider `NODE_ENV=production` (serves static build, disables Vite middleware)
 
 ## Scaling
 

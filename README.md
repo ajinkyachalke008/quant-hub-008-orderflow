@@ -1,4 +1,4 @@
-﻿# OpenTerminal Order Flow Intelligence — Tradfye Terminal clone
+# OpenTerminal Order Flow Intelligence — Tradfye Terminal clone
 
 > Production-quality read-only order flow intelligence module built into the existing OpenTerminal (quant-hub-008) application, reverse-engineered from Tradfye Terminal (tradfye.com/terminal) using REA methodology. Read-only — no trading execution, no credentials, no mock data.
 
@@ -255,6 +255,20 @@ Source: `tradfye-rea-research` (tradfye.com/terminal reverse engineering)
 - Frontend gracefully degrades; `FeedStatusBadge` reflects `Disconnected`/`FallbackActive` states
 
 **Recommended fix:** Deploy a server-side proxy (VPS/cloud) to relay WS streams → client via SSE/WebSocket. Ensures India compliance and reliable delivery.
+
+## Security
+
+The server is hardened for production deployment:
+
+| Control | Default | Config |
+|---------|---------|--------|
+| CORS | Localhost dev only (no wildcard) | `ALLOWED_ORIGINS` env var |
+| SSE rate limit | 6 connections / IP / minute | `SseRateLimiter` in `server/security.ts` |
+| Max clients / proxy | 50 concurrent | `MAX_CLIENTS_PER_PROXY` |
+| JSON body limit | 1 MB | `express.json({ limit: '1mb' })` |
+| Security headers | nosniff, SAMEORIGIN, no-referrer | `server/security.ts` |
+
+> **Note:** If you previously used a GitHub Personal Access Token embedded in the git remote URL, rotate it on GitHub and use a credential helper / SSH instead. See `git remote set-url origin https://github.com/<user>/<repo>.git`.
 
 ---
 

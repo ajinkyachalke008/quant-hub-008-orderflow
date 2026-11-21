@@ -2,8 +2,9 @@ import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import type { ServerResponse } from 'http';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import { proxyManager, fetchDeribitOptions } from './server/proxy';
+import { corsMiddleware, securityHeaders, SseRateLimiter, MAX_CLIENTS_PER_PROXY, clientIp } from './server/security';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,7 +12,10 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 
-app.use(express.json());
+// Security: headers + CORS (before routes)
+app.use(securityHeaders);
+app.use(corsMiddleware);
+app.use(express.json({ limit: '1mb' })); // limit JSON body size
 
 // In-memory cache to stay snappy and respect rate limits
 const cache: Record<string, { timestamp: number; data: any }> = {};
@@ -470,12 +474,13 @@ app.get('/api/crypto', async (_req, res) => {
 // every connected browser client. See server/proxy/.
 // =========================================================================
 
+const sseLimiter = new SseRateLimiter(6, 60_000); // 6 SSE conns per IP per minute
+
 function sseSetup(res: ServerResponse) {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache, no-transform',
     'Connection': 'keep-alive',
-    'Access-Control-Allow-Origin': '*',
     'X-Accel-Buffering': 'no',
   });
   res.write(': ping\n\n');
@@ -491,6 +496,12 @@ function sseSetup(res: ServerResponse) {
 type ProxyKind = 'binance' | 'bybit' | 'deribit';
 
 function openSse(req: Request, res: ServerResponse, kind: ProxyKind, symbol: string): void {
+  // Rate limit: cap SSE connections per client IP
+  const ip = clientIp(req);
+  if (!sseLimiter.allow(ip)) {
+    (res as Response).status(429).json({ error: 'Too many SSE connections from this IP; slow down.' });
+    return;
+  }
   const heartbeat = sseSetup(res);
   const clientId = `${kind}-${symbol}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
@@ -498,6 +509,8 @@ function openSse(req: Request, res: ServerResponse, kind: ProxyKind, symbol: str
     proxyManager.attach(kind, symbol, clientId, res);
   } catch (err) {
     console.warn(`[proxy] failed to attach ${kind} ${symbol}:`, err);
+    clearInterval(heartbeat);
+    return;
   }
 
   let closed = false;

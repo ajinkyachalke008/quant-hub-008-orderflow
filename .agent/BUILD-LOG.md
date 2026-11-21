@@ -1,4 +1,4 @@
-﻿# BUILD-LOG.md â€” OpenTerminal Order Flow Intelligence
+# BUILD-LOG.md â€” OpenTerminal Order Flow Intelligence
 
 ## Header
 - **Project:** OpenTerminal Order Flow Intelligence
@@ -10,7 +10,7 @@
 - **Current stage:** ALL COMPLETE — MVP + Phase 2 + R08 Proxy Resolution
 - **Overall progress:** 100% (all stages 0-5 complete; TypeScript: 0 errors; R08 resolved via server-side proxy)
 - **Last updated:** 2026-11-21
-- **Next action:** DEPLOY PROXY in permitted region (US/EU/SG) for live-data verification
+- **Next action:** Deploy proxy in permitted region; set ALLOWED_ORIGINS; rotate old PAT
 
 ## Stage Table
 
@@ -24,6 +24,7 @@
 | Stage 5 â€” Phase 2 | DONE | <ul><li>[ ] GEX panel</li><li>[ ] options chain</li><li>[ ] Bybit fallback</li><li>[ ] historical scroll</li><li>[ ] cross-exchange spread</li><li>[ ] OHLCV lightweight-charts view</li></ul> |
 
 ## Session Log (newest first)
+- **2026-11-21:** Security hardening — removed embedded GitHub PAT from git remote (now uses credential manager); replaced wildcard CORS with configurable allowlist (ALLOWED_ORIGINS env, localhost-only dev default); added SSE rate limiting (6/IP/min, 429 on exceed) and max 50 clients/proxy; added helmet-lite security headers; limited JSON body to 1MB. Created server/security.ts. tsc: 0 errors. Build passes. Smoke test: CORS blocks evil origins, localhost reflected, preflight 204.
 - **2026-11-21:** R08 resolved - server-side proxy implemented. Created server/proxy/ with BinanceFuturesProxy, BybitLinearProxy, DeribitProxy. Added SSE endpoints. Fixed 5 client-adapter bugs. Wired proxy auto-detect + 3s fallback. Created Dockerfile, docker-compose.yml, .dockerignore, proxy/DEPLOY.md. tsc: 0 errors. Build passes. Live data verified.
 - **2026-11-21:** Fixed all TypeScript errors — 29 in OptionsChain.tsx (template literal JSX syntax, unquoted CSS values, key prop) + 19 across DangerMeter/DecisionPanel/FootprintCanvas/OHLCVChart/OrderBookLadder/OrderFlowTerminalWidget/footprintRenderer/heatmapRenderer (FeedState comparisons, useRef init, lightweight-charts v4 API, BookLevel property names, import paths). tsc --noEmit --skipLibCheck: 0 errors. Build passes. Pushed as commit eb29226.
 - **2026-11-20:** Rewrote README.md (280 lines, up from 181) -- full detail on all stages 0-5, 27 order-flow files grouped by MVP and Phase 2, 6-layer architecture, confirmed constants table, data sources, tech stack, build/run commands, 4 additive integration edits, research source, India WS blocker with REST price evidence, 6-commit git history, MIT license. Pushed as commit d38c1d0.

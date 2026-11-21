@@ -10,6 +10,7 @@ import type { FeedState } from '../../src/types/orderFlow';
 import { BinanceFuturesProxy } from './BinanceFuturesProxy';
 import { BybitLinearProxy } from './BybitLinearProxy';
 import { DeribitProxy } from './DeribitProxy';
+import { MAX_CLIENTS_PER_PROXY } from '../security';
 
 export { BinanceFuturesProxy } from './BinanceFuturesProxy';
 export { BybitLinearProxy, BybitOrderBookState } from './BybitLinearProxy';
@@ -60,6 +61,11 @@ export class ProxyManager {
   ): FeedState {
     const key = ProxyManager.key(kind, symbol);
     let entry = this.entries.get(key);
+
+    // Enforce per-proxy concurrent client cap (teardown-friendly: openSse's catch cleans up)
+    if (entry && entry.proxy.getClientCount() >= MAX_CLIENTS_PER_PROXY) {
+      throw new Error(`Max clients reached for ${kind} ${symbol}`);
+    }
     if (entry && entry.proxy.getStatus() === 'DISCONNECTED') {
       // Its own idle timer already tore the upstream down; rebuild it.
       if (entry.idleTimer !== null) clearTimeout(entry.idleTimer);
