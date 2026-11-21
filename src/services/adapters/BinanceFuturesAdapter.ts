@@ -21,6 +21,7 @@ const BASE_URL = 'wss://fstream.binance.com/stream';
 const DEFAULT_SYMBOL = 'BTCUSDT';
 const BACKOFF_MS: number[] = [1000, 2000, 4000, 8000, 16000, 30000];
 const STALE_MS = 45000;
+const PROXY_FALLBACK_MS = 3000;
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
@@ -49,18 +50,22 @@ interface StreamHandlers {
 export class BinanceFuturesAdapter implements IExchangeAdapter {
   private symbol: string;
   private ws: WebSocket | null = null;
+  private es: EventSource | null = null;
   private status: FeedState = 'CONNECTING';
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private proxyFallbackTimer: ReturnType<typeof setTimeout> | null = null;
   private backoffIndex: number = 0;
   private lastMessageTime: number = 0;
   private streamsLive: Set<string> = new Set();
   private manuallyClosed: boolean = false;
   private handlers: StreamHandlers = {};
+  private readonly proxyUrl: string | null;
 
   private readonly expectedStreams: string[];
 
-  constructor(symbol: string = DEFAULT_SYMBOL) {
+  constructor(symbol: string = DEFAULT_SYMBOL, proxyUrl: string | null = null) {
     this.symbol = symbol.toLowerCase();
+    this.proxyUrl = proxyUrl;
     const sym = this.symbol;
     this.expectedStreams = [
       `${sym}@aggTrade`,
@@ -78,6 +83,21 @@ export class BinanceFuturesAdapter implements IExchangeAdapter {
     this.backoffIndex = 0;
     this.lastMessageTime = Date.now();
 
+    const useProxy =
+      this.proxyUrl != null
+        ? true
+        : typeof window !== 'undefined' &&
+          (window.location.port === '3000' || import.meta.env.DEV);
+
+    if (useProxy) {
+      this.connectViaProxy();
+    } else {
+      this.connectDirect();
+    }
+  }
+
+  /** Direct WebSocket connection (existing logic, used as fallback). */
+  private connectDirect(): void {
     const url = `${BASE_URL}?streams=${this.expectedStreams.join('/')}`;
     console.info('[BinanceFuturesAdapter] connecting', this.symbol);
 
@@ -113,12 +133,109 @@ export class BinanceFuturesAdapter implements IExchangeAdapter {
     };
   }
 
+  /** Server-Sent Events proxy connection (same-origin Express server). */
+  private connectViaProxy(): void {
+    const base = this.proxyUrl ?? '/sse/binance';
+    const url = `${base}/${this.symbol}`;
+    console.info('[BinanceFuturesAdapter] connecting via proxy', url);
+
+    this.es = new EventSource(url);
+
+    this.es.onopen = () => {
+      if (this.proxyFallbackTimer !== null) {
+        clearTimeout(this.proxyFallbackTimer);
+        this.proxyFallbackTimer = null;
+      }
+      if (this.manuallyClosed) return;
+      this.status = 'LIVE';
+      console.info('[BinanceFuturesAdapter] proxy connected', this.symbol);
+    };
+
+    this.es.onmessage = (event: MessageEvent) => {
+      this.lastMessageTime = Date.now();
+      let payload: unknown;
+      try {
+        payload = JSON.parse(event.data as string);
+      } catch {
+        console.debug('[BinanceFuturesAdapter] malformed proxy message dropped');
+        return;
+      }
+      this.handleProxyMessage(payload);
+    };
+
+    this.es.onerror = () => {
+      if (this.manuallyClosed) return;
+      this.status = 'RECONNECTING';
+      // EventSource auto-reconnects. If we are still inside the fallback
+      // window and the proxy never opened, give up and use direct WS.
+      if (this.proxyFallbackTimer !== null) {
+        this.closeProxy();
+        this.connectDirect();
+      }
+    };
+
+    this.proxyFallbackTimer = setTimeout(() => {
+      this.proxyFallbackTimer = null;
+      if (this.manuallyClosed) return;
+      this.closeProxy();
+      this.connectDirect();
+    }, PROXY_FALLBACK_MS);
+  }
+
+  private closeProxy(): void {
+    if (this.es !== null) {
+      try {
+        this.es.close();
+      } catch {
+        /* ignore */
+      }
+      this.es = null;
+    }
+  }
+
+  private handleProxyMessage(payload: unknown): void {
+    if (!this.isPlainObject(payload)) return;
+    const obj = payload as Record<string, unknown>;
+    const type = obj['type'];
+
+    if (type === 'trade' || type === 'trades') {
+      const trades =
+        obj['trades'] ?? (type === 'trade' ? obj['trade'] : undefined);
+      if (Array.isArray(trades)) {
+        for (const t of trades) this.handleAggTrade(t);
+      } else if (trades !== undefined) {
+        this.handleAggTrade(trades);
+      }
+      return;
+    }
+    if (type === 'depth') {
+      const d = obj['depth'];
+      if (d) this.handleDepth(d);
+      return;
+    }
+    if (type === 'liquidation') {
+      const l = obj['liquidation'];
+      if (l) this.handleLiquidation(l);
+      return;
+    }
+    if (type === 'markPrice') {
+      const m = obj['markPrice'];
+      if (m) this.handleMarkPrice(m);
+      return;
+    }
+  }
+
   public disconnect(): void {
     this.manuallyClosed = true;
     if (this.reconnectTimer !== null) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    if (this.proxyFallbackTimer !== null) {
+      clearTimeout(this.proxyFallbackTimer);
+      this.proxyFallbackTimer = null;
+    }
+    this.closeProxy();
     if (this.ws !== null) {
       this.ws.close();
       this.ws = null;
@@ -233,8 +350,8 @@ export class BinanceFuturesAdapter implements IExchangeAdapter {
     if (!this.isPlainObject(data)) return null;
     const obj = data as Record<string, unknown>;
     const s = obj['s'];
-    const bidsRaw = obj['bids'];
-    const asksRaw = obj['asks'];
+    const bidsRaw = obj['b'] ?? obj['bids'];
+    const asksRaw = obj['a'] ?? obj['asks'];
     const T = toNum(obj['T'] ?? obj['E']);
     if (typeof s !== 'string' || T === null) return null;
     const bids = this.parseLevels(bidsRaw);

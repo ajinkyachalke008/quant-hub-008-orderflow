@@ -6,7 +6,7 @@
 
 ## Status
 
-**ALL COMPLETE** — Stages 0–5 done, build passes, pushed to GitHub.
+**ALL COMPLETE** — Stages 0–5 done, R08 resolved via server-side proxy, TypeScript: 0 errors
 
 | Stage | Scope | Status |
 |-------|-------|--------|

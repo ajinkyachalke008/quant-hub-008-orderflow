@@ -1,6 +1,9 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { ServerResponse } from 'http';
+import type { Request } from 'express';
+import { proxyManager, fetchDeribitOptions } from './server/proxy';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -461,6 +464,95 @@ app.get('/api/crypto', async (_req, res) => {
   res.status(500).json({ error: 'Failed to fetch crypto board' });
 });
 
+// =========================================================================
+// R08: Server-side live market data delivery (SSE)
+// One upstream exchange connection per (exchange, symbol), fanned out to
+// every connected browser client. See server/proxy/.
+// =========================================================================
+
+function sseSetup(res: ServerResponse) {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write(': ping\n\n');
+  return setInterval(() => {
+    try {
+      res.write(': ping\n\n');
+    } catch {
+      /* client socket already gone */
+    }
+  }, 15000);
+}
+
+type ProxyKind = 'binance' | 'bybit' | 'deribit';
+
+function openSse(req: Request, res: ServerResponse, kind: ProxyKind, symbol: string): void {
+  const heartbeat = sseSetup(res);
+  const clientId = `${kind}-${symbol}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  try {
+    proxyManager.attach(kind, symbol, clientId, res);
+  } catch (err) {
+    console.warn(`[proxy] failed to attach ${kind} ${symbol}:`, err);
+  }
+
+  let closed = false;
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(heartbeat);
+    try {
+      proxyManager.detach(kind, symbol, clientId);
+    } catch {
+      /* ignore */
+    }
+  };
+  req.on('close', cleanup);
+  req.on('error', cleanup);
+}
+
+// SSE: Binance USD-M Futures (aggTrade / depth20 / forceOrder / markPrice)
+app.get('/sse/binance/:symbol', (req, res) => {
+  openSse(req, res, 'binance', req.params.symbol.toUpperCase());
+});
+
+// SSE: Bybit USDT perpetuals (publicTrade / orderbook.25 / liquidation)
+app.get('/sse/bybit/:symbol', (req, res) => {
+  openSse(req, res, 'bybit', req.params.symbol.toUpperCase());
+});
+
+// SSE: Deribit option GEX profile
+app.get('/sse/gamma/:symbol', (req, res) => {
+  openSse(req, res, 'deribit', req.params.symbol.toUpperCase());
+});
+
+// REST: Deribit option chain proxy (cached like the other REST endpoints)
+app.get('/api/deribit/options', async (req, res) => {
+  const currency = ((req.query.currency as string) || 'BTC').toUpperCase();
+  const kind = (req.query.kind as string) || 'option';
+  const cacheKey = `deribit_${currency}_${kind}`;
+  const cached = getCached(cacheKey);
+  if (cached) return res.json(cached);
+
+  try {
+    const options = await fetchDeribitOptions(currency, kind);
+    const payload = { currency, kind, count: options.length, options, timestamp: Date.now() };
+    setCache(cacheKey, payload);
+    return res.json(payload);
+  } catch (err) {
+    console.warn(`[proxy] Deribit fetch failed for ${currency}:`, err);
+    return res.status(502).json({ error: `Could not fetch Deribit ${kind} data for ${currency}` });
+  }
+});
+
+// Health check for every live proxy
+app.get('/api/proxy/status', (_req, res) => {
+  res.json({ proxies: proxyManager.getStatusSnapshot() });
+});
 // Production static assets or Vite middleware in dev
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
@@ -480,6 +572,17 @@ async function startServer() {
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`[OpenTerminal] Real Market Data Server running on http://0.0.0.0:${PORT}`);
   });
+
+  const shutdown = () => {
+    try {
+      proxyManager.shutdown();
+    } catch {
+      /* ignore */
+    }
+    process.exit(0);
+  };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 startServer();
