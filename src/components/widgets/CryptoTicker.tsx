@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import { useTerminal } from '../../context/TerminalContext';
-import { GripHorizontal, RefreshCw, X, Minimize2, Maximize2, Coins, TrendingUp } from 'lucide-react';
+import { GripHorizontal, RefreshCw, X, Minimize2, Maximize2, Coins, TrendingUp, WifiOff } from 'lucide-react';
 
 export interface CryptoTickerItem {
   symbol: string;
@@ -13,54 +13,15 @@ export interface CryptoTickerItem {
   sparkline: number[];
 }
 
-/**
- * Mock Data Provider interface for major crypto assets
- */
-export const mockCryptoDataProvider = {
-  fetchInitial: (): Record<string, CryptoTickerItem> => ({
-    BTC: {
-      symbol: 'BTC',
-      name: 'Bitcoin',
-      price: 78456.00,
-      change: 1450.00,
-      changePercent: 1.89,
-      high24h: 79120.00,
-      low24h: 76800.00,
-      sparkline: [76900, 77200, 77600, 77400, 78100, 78456],
-    },
-    ETH: {
-      symbol: 'ETH',
-      name: 'Ethereum',
-      price: 2322.00,
-      change: 54.40,
-      changePercent: 2.40,
-      high24h: 2365.00,
-      low24h: 2260.00,
-      sparkline: [2270, 2285, 2300, 2295, 2315, 2322],
-    },
-    SOL: {
-      symbol: 'SOL',
-      name: 'Solana',
-      price: 93.19,
-      change: 0.90,
-      changePercent: 0.97,
-      high24h: 95.40,
-      low24h: 91.80,
-      sparkline: [91.9, 92.4, 92.8, 92.5, 93.0, 93.19],
-    },
-  }),
-};
-
 export const CryptoTicker: React.FC = () => {
   const { setActiveSymbol, activeSymbol } = useTerminal();
-  const [items, setItems] = useState<Record<string, CryptoTickerItem>>(mockCryptoDataProvider.fetchInitial());
+  const [items, setItems] = useState<Record<string, CryptoTickerItem>>({});
   const [isMinimized, setIsMinimized] = useState(false);
-  const [providerMode, setProviderMode] = useState<'LIVE' | 'MOCK'>('LIVE');
+  const [isOnline, setIsOnline] = useState(false);
   const [position, setPosition] = useState<{ x: number; y: number }>({ x: 24, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Fetch real data with fallback to mock data provider
   const refreshPrices = async () => {
     try {
       const resp = await fetch('/api/crypto');
@@ -87,14 +48,13 @@ export const CryptoTicker: React.FC = () => {
             });
             return next;
           });
-          setProviderMode('LIVE');
+          setIsOnline(true);
           return;
         }
       }
     } catch (_) {}
 
-    // Fallback to mock data provider if network is offline
-    setProviderMode('MOCK');
+    setIsOnline(false);
   };
 
   useEffect(() => {
@@ -163,13 +123,24 @@ export const CryptoTicker: React.FC = () => {
             CRYPTO TICKER
           </span>
           <span
-            className="text-[9px] font-mono px-1 py-0.2 rounded border"
+            className="text-[9px] font-mono px-1.5 py-0.2 rounded border flex items-center gap-1"
             style={{
               borderColor: 'var(--ot-border)',
-              color: providerMode === 'LIVE' ? 'var(--ot-profit)' : 'var(--ot-cyan)',
+              color: isOnline ? 'var(--ot-profit)' : 'var(--ot-loss)',
+              backgroundColor: isOnline ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
             }}
           >
-            {providerMode}
+            {isOnline ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--ot-profit)' }} />
+                LIVE
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-2.5 h-2.5" />
+                OFFLINE
+              </>
+            )}
           </span>
         </div>
 
@@ -186,55 +157,63 @@ export const CryptoTicker: React.FC = () => {
       {/* Body */}
       {!isMinimized && (
         <div className="p-2 space-y-1 divide-y" style={{ borderColor: 'var(--ot-border)' }}>
-          {majorTickers.map((sym) => {
-            const item = items[sym];
-            if (!item) return null;
-            const isPos = item.changePercent >= 0;
-            const isActive = sym === activeSymbol;
+          {!isOnline && Object.keys(items).length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-6 gap-2 text-center">
+              <WifiOff className="w-8 h-8" style={{ color: 'var(--ot-loss)' }} />
+              <span className="text-xs font-mono text-slate-400">OFFLINE</span>
+              <span className="text-[10px] text-slate-500 px-3">unable to fetch live prices</span>
+            </div>
+          ) : (
+            majorTickers.map((sym) => {
+              const item = items[sym];
+              if (!item) return null;
+              const isPos = item.changePercent >= 0;
+              const isActive = sym === activeSymbol;
 
-            return (
-              <div
-                key={sym}
-                onClick={() => setActiveSymbol(sym)}
-                className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
-                  isActive ? 'bg-slate-800/40 border-l-2' : 'hover:bg-slate-800/20'
-                }`}
-                style={{
-                  borderColor: isActive ? 'var(--ot-cyan)' : 'transparent',
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <div
-                    className="w-6 h-6 rounded flex items-center justify-center font-bold text-[10px] font-mono border"
-                    style={{
-                      borderColor: 'var(--ot-border)',
-                      backgroundColor: 'var(--ot-bg-surface)',
-                      color: 'var(--ot-amber)',
-                    }}
-                  >
-                    {sym}
+              return (
+                <div
+                  key={sym}
+                  onClick={() => setActiveSymbol(sym)}
+                  className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
+                    isActive ? 'bg-slate-800/40 border-l-2' : 'hover:bg-slate-800/20'
+                  }`}
+                  style={{
+                    borderColor: isActive ? 'var(--ot-cyan)' : 'transparent',
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-6 h-6 rounded flex items-center justify-center font-bold text-[10px] font-mono border"
+                      style={{
+                        borderColor: 'var(--ot-border)',
+                        backgroundColor: 'var(--ot-bg-surface)',
+                        color: 'var(--ot-amber)',
+                      }}
+                    >
+                      {sym}
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-slate-100">{item.symbol}</span>
+                      <span className="text-[10px] text-slate-400">{item.name}</span>
+                    </div>
                   </div>
-                  <div className="flex flex-col">
-                    <span className="text-xs font-bold text-slate-100">{item.symbol}</span>
-                    <span className="text-[10px] text-slate-400">{item.name}</span>
+
+                  <div className="text-right font-mono tabular-nums">
+                    <div className="text-xs font-bold text-slate-100">
+                      ${item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </div>
+                    <div
+                      className="text-[10px] font-semibold"
+                      style={{ color: isPos ? 'var(--ot-profit)' : 'var(--ot-loss)' }}
+                    >
+                      {isPos ? '+' : ''}
+                      {item.changePercent.toFixed(2)}%
+                    </div>
                   </div>
                 </div>
-
-                <div className="text-right font-mono tabular-nums">
-                  <div className="text-xs font-bold text-slate-100">
-                    ${item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </div>
-                  <div
-                    className="text-[10px] font-semibold"
-                    style={{ color: isPos ? 'var(--ot-profit)' : 'var(--ot-loss)' }}
-                  >
-                    {isPos ? '+' : ''}
-                    {item.changePercent.toFixed(2)}%
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })
+          )}
         </div>
       )}
     </div>

@@ -1,4 +1,4 @@
-import { EconomicEvent, NewsSentimentReport } from '../types/terminal';
+﻿import { EconomicEvent, NewsSentimentReport } from '../types/terminal';
 
 // High-impact economic calendar events scheduled around current market sessions
 const SCHEDULED_EVENTS: Omit<EconomicEvent, 'countdownMinutes'>[] = [
@@ -96,7 +96,7 @@ class MacroCalendarService {
     bearishScore: 32,
     netSentiment: 0.36,
     sentimentLabel: 'BULLISH',
-    sampleCount: 24,
+    sampleCount: SCHEDULED_EVENTS.length,
     topKeywords: [
       { word: 'central bank buying', count: 7, sentiment: 'bullish' },
       { word: 'rate cut', count: 5, sentiment: 'bullish' },
@@ -195,3 +195,4 @@ class MacroCalendarService {
 }
 
 export const macroCalendarService = new MacroCalendarService();
+

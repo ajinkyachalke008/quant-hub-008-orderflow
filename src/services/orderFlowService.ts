@@ -24,6 +24,7 @@ import {
   MIN_TRADES_FOR_SCORE,
 } from '../lib/orderflow/decisionEngine';
 import { computeDangerLevel, isLiquidationBurst } from '../lib/orderflow/dangerMeter';
+import { VolumeProfileEngine } from './volumeProfileEngine';
 
 const DECISION_INTERVAL_MS = 1000;
 const TRADE_STALE_MS = 10_000;
@@ -252,7 +253,33 @@ export class OrderFlowService {
       if (total > 0) bookSig = (bidVol - askVol) / total;
     }
 
-    const valueSig = valueSignal(this.sessionVwap, this.sessionVwap, this.sessionVwap);
+    const lastTradePrice = this.trades.length ? this.trades[this.trades.length - 1].price : this.sessionVwap;
+    let valueSig = 0;
+    if (this.trades.length >= MIN_TRADES_FOR_SCORE) {
+      const candles = this.trades.map((t) => ({
+        time: '',
+        timestamp: t.timestamp,
+        open: t.price,
+        high: t.price,
+        low: t.price,
+        close: t.price,
+        volume: t.qty,
+      }));
+      const vp = VolumeProfileEngine.calculateVPVR(candles);
+      if (vp.vahPrice > 0 && vp.valPrice > 0 && vp.vahPrice !== vp.valPrice) {
+        valueSig = valueSignal(lastTradePrice, vp.vahPrice, vp.valPrice);
+      } else {
+        let hi = -Infinity;
+        let lo = Infinity;
+        for (const t of this.trades) {
+          if (t.price > hi) hi = t.price;
+          if (t.price < lo) lo = t.price;
+        }
+        if (Number.isFinite(hi) && Number.isFinite(lo) && hi !== lo) {
+          valueSig = valueSignal(lastTradePrice, hi, lo);
+        }
+      }
+    }
 
     let largePrints = 0;
     const large = recent60.filter((t) => t.quoteQty >= 50_000);
