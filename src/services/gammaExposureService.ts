@@ -1,20 +1,17 @@
-// gammaExposureService.ts — Deribit options -> GEX profile service. No React imports.
 import { computeGexProfile } from '../lib/orderflow/gexCalculator';
 import { GEXProfile } from '../stores/orderFlowStore';
 import { NormalizedOption } from '../types/orderFlow';
 
-const DERIBIT_URL =
+const DERIBIT_PROXY_URL = '/api/deribit/options?currency=BTC&kind=option';
+const DERIBIT_DIRECT_URL =
   'https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=BTC&kind=option';
 
-/** Deribit expiries settle at 08:00 UTC. */
 const EXPIRY_HOUR_UTC = 8;
-
 const MONTHS: Record<string, number> = {
   JAN: 0, FEB: 1, MAR: 2, APR: 3, MAY: 4, JUN: 5,
   JUL: 6, AUG: 7, SEP: 8, OCT: 9, NOV: 10, DEC: 11,
 };
 
-/** Parse "26MAR27" into a UTC timestamp (settles 08:00 UTC). */
 function parseDeribitExpiry(token: string): number | null {
   const m = /^(\d{2})([A-Z]{3})(\d{2})$/.exec(token);
   if (!m) return null;
@@ -26,12 +23,7 @@ function parseDeribitExpiry(token: string): number | null {
   return Number.isFinite(ts) ? ts : null;
 }
 
-/** Parse "BTC-26MAR27-40000-C" into strike / optionType / expiry. */
-function parseDeribitInstrument(name: string): {
-  strike: number;
-  optionType: 'call' | 'put';
-  expiry: number;
-} | null {
+function parseDeribitInstrument(name: string): { strike: number; optionType: 'call' | 'put'; expiry: number } | null {
   const parts = name.split('-');
   if (parts.length !== 4) return null;
   const strike = Number(parts[2]);
@@ -58,7 +50,6 @@ interface DeribitBookSummaryRaw {
   underlying_price?: number;
 }
 
-/** Normalize one book-summary entry, tolerating both old and new API shapes. */
 function normalizeEntry(raw: DeribitBookSummaryRaw): NormalizedOption | null {
   const name = raw.instrument_name;
   if (typeof name !== 'string' || name.length === 0) return null;
@@ -94,17 +85,20 @@ export class GammaExposureService {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   async fetchOptions(): Promise<NormalizedOption[]> {
+    // Prefer proxy endpoint
     try {
-      const res = await fetch(DERIBIT_URL);
-      if (!res.ok) {
-        console.error('[GammaExposureService] deribit fetch failed:', res.status, res.statusText);
-        return [];
+      const res = await fetch(DERIBIT_PROXY_URL);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data?.options)) return data.options as NormalizedOption[];
       }
+    } catch {}
+    try {
+      const res = await fetch(DERIBIT_DIRECT_URL);
+      if (!res.ok) return [];
       const data = await res.json();
       const rows = Array.isArray(data?.result) ? (data.result as DeribitBookSummaryRaw[]) : [];
-      return rows
-        .map((o) => normalizeEntry(o as DeribitBookSummaryRaw))
-        .filter((o): o is NormalizedOption => o !== null);
+      return rows.map((o) => normalizeEntry(o)).filter((o): o is NormalizedOption => o !== null);
     } catch (err) {
       console.error('[GammaExposureService] fetchOptions error', err);
       return [];
@@ -112,10 +106,11 @@ export class GammaExposureService {
   }
 
   computeProfile(options: NormalizedOption[], spot: number): GEXProfile {
+    const s = spot > 0 ? spot : (options[0]?.underlyingPrice ?? 0);
     try {
-      const gex = computeGexProfile(options, spot);
+      const gex = computeGexProfile(options, s);
       return {
-        spot,
+        spot: s,
         flipStrike: gex.flipLevel,
         gammaProfile: gex.prices.map((p, i) => ({
           strike: p,
@@ -123,11 +118,12 @@ export class GammaExposureService {
           putGamma: Math.min(0, gex.netGex[i]),
           netGamma: gex.netGex[i],
         })),
+        options,
         timestamp: Date.now(),
       };
     } catch (err) {
       console.error('[GammaExposureService] computeProfile error', err);
-      return { spot, flipStrike: null, gammaProfile: [], timestamp: Date.now() };
+      return { spot: s, flipStrike: null, gammaProfile: [], options, timestamp: Date.now() };
     }
   }
 
@@ -148,4 +144,3 @@ export class GammaExposureService {
     }
   }
 }
-

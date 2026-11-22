@@ -33,6 +33,93 @@ function setCache(key: string, data: any) {
   cache[key] = { timestamp: Date.now(), data };
 }
 
+// ---- Real market data helpers ----
+interface Weekly52 {
+  high: number;
+  low: number;
+  open: number;
+}
+
+const weekly52Cache: Record<string, { timestamp: number; data: Weekly52 }> = {};
+
+async function getBinanceWeekly52(pair: string): Promise<Weekly52 | null> {
+  const cached = weekly52Cache[pair];
+  if (cached && Date.now() - cached.timestamp < 60000) {
+    return cached.data;
+  }
+  try {
+    const resp = await fetch(
+      `https://api.binance.com/api/v3/klines?symbol=${pair}&interval=1w&limit=52`
+    );
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    if (!Array.isArray(data) || data.length === 0) return null;
+    let high = -Infinity;
+    let low = Infinity;
+    for (const k of data) {
+      const h = parseFloat(k[2]);
+      const l = parseFloat(k[3]);
+      if (!Number.isNaN(h) && h > high) high = h;
+      if (!Number.isNaN(l) && l < low) low = l;
+    }
+    const open = parseFloat(data[0][1]);
+    if (Number.isNaN(open) || high === -Infinity || low === Infinity) return null;
+    const result: Weekly52 = { high, low, open };
+    weekly52Cache[pair] = { timestamp: Date.now(), data: result };
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+const GECKO_IDS: Record<string, string> = {
+  BTC: 'bitcoin',
+  ETH: 'ethereum',
+  SOL: 'solana',
+  BNB: 'binancecoin',
+  XRP: 'ripple',
+  AVAX: 'avalanche-2',
+};
+
+let geckoCache: { ts: number; data: Record<string, string> } = { ts: 0, data: {} };
+
+function formatMarketCap(n: number): string {
+  if (!n || n <= 0) return 'N/A';
+  if (n >= 1e12) return `$${(n / 1e12).toFixed(2)}T`;
+  if (n >= 1e9) return `$${(n / 1e9).toFixed(0)}B`;
+  if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`;
+  return `$${n.toLocaleString()}`;
+}
+
+async function getCryptoMarketCaps(): Promise<Record<string, string>> {
+  if (Date.now() - geckoCache.ts < 60000 && Object.keys(geckoCache.data).length > 0) {
+    return geckoCache.data;
+  }
+  try {
+    const ids = Array.from(new Set(Object.values(GECKO_IDS))).join(',');
+    const resp = await fetch(
+      `https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=${ids}&order=market_cap_desc`
+    );
+    if (resp.ok) {
+      const arr = await resp.json();
+      const byId: Record<string, number> = {};
+      for (const c of arr) {
+        if (c && typeof c.market_cap === 'number') byId[c.id] = c.market_cap;
+      }
+      const result: Record<string, string> = {};
+      for (const sym of Object.keys(GECKO_IDS)) {
+        const mc = byId[GECKO_IDS[sym]];
+        result[sym] = mc != null ? formatMarketCap(mc) : 'N/A';
+      }
+      geckoCache = { ts: Date.now(), data: result };
+      return result;
+    }
+  } catch {
+    // ignore gecko errors
+  }
+  return geckoCache.data;
+}
+
 // 1. Real Live Quote Endpoint
 app.get('/api/quote/:symbol', async (req, res) => {
   const rawSym = req.params.symbol.toUpperCase();
@@ -64,19 +151,21 @@ app.get('/api/quote/:symbol', async (req, res) => {
           sparkline = kdata.map((k: any) => parseFloat(k[4]));
         }
 
+        const wk52 = await getBinanceWeekly52('PAXGUSDT');
+
         const quote = {
           symbol: 'XAU/USD',
           name: 'Gold Spot / US Dollar (LBMA / COMEX)',
           price,
           change,
           changePercent,
-          open,
+          open: wk52 ? wk52.open : open,
           high,
           low,
           volume: `$${(volume * price / 1e6).toFixed(2)}M`,
-          marketCap: '$17.2T (Physical Global Bullion)',
-          fiftyTwoWeekHigh: high * 1.08,
-          fiftyTwoWeekLow: low * 0.72,
+          marketCap: 'N/A',
+          fiftyTwoWeekHigh: wk52 ? wk52.high : 'N/A',
+          fiftyTwoWeekLow: wk52 ? wk52.low : 'N/A',
           assetType: 'commodity',
           sparkline,
           confidence: 0.15,
@@ -111,19 +200,21 @@ app.get('/api/quote/:symbol', async (req, res) => {
           sparkline = kdata.map((k: any) => parseFloat(k[4]));
         }
 
+        const wk52 = await getBinanceWeekly52(pair);
+
         const quote = {
           symbol: rawSym,
           name: `${rawSym} / USD (Binance Spot)`,
           price,
           change,
           changePercent,
-          open,
+          open: wk52 ? wk52.open : open,
           high,
           low,
           volume: `$${(volume * price / 1e6).toFixed(1)}M`,
-          marketCap: rawSym === 'BTC' ? '$1.55T' : rawSym === 'ETH' ? '$380B' : '$90B',
-          fiftyTwoWeekHigh: high * 1.15,
-          fiftyTwoWeekLow: low * 0.75,
+          marketCap: (await getCryptoMarketCaps())[rawSym] || 'N/A',
+          fiftyTwoWeekHigh: wk52 ? wk52.high : 'N/A',
+          fiftyTwoWeekLow: wk52 ? wk52.low : 'N/A',
           assetType: 'crypto',
           sparkline,
         };
@@ -157,13 +248,13 @@ app.get('/api/quote/:symbol', async (req, res) => {
           price,
           change,
           changePercent,
-          open: meta.regularMarketDayLow ? +(meta.regularMarketDayLow * 1.002).toFixed(2) : price,
+          open: meta.regularMarketOpen ?? 'N/A',
           high: meta.regularMarketDayHigh ?? Math.max(...sparkline),
           low: meta.regularMarketDayLow ?? Math.min(...sparkline),
-          volume: meta.regularMarketVolume ? `${(meta.regularMarketVolume / 1e6).toFixed(1)}M` : '24.5M',
-          marketCap: meta.marketCap ? `$${(meta.marketCap / 1e12).toFixed(2)}T` : '$1.85T',
-          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ?? price * 1.2,
-          fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? price * 0.7,
+          volume: meta.regularMarketVolume ? `${(meta.regularMarketVolume / 1e6).toFixed(1)}M` : 'N/A',
+          marketCap: meta.marketCap ? `$${(meta.marketCap / 1e12).toFixed(2)}T` : 'N/A',
+          fiftyTwoWeekHigh: meta.fiftyTwoWeekHigh ?? 'N/A',
+          fiftyTwoWeekLow: meta.fiftyTwoWeekLow ?? 'N/A',
           assetType: rawSym.startsWith('^') ? 'index' : 'equity',
           sparkline,
         };
@@ -326,103 +417,161 @@ function calculateIndicators(candles: any[]) {
   }
 }
 
+// Helper: fetch a FRED CSV series (free, no API key). Returns values oldest-first.
+async function fetchFred(seriesId: string): Promise<number[]> {
+  const url = "https://fred.stlouisfed.org/graph/fredgraph.csv?id=" + encodeURIComponent(seriesId);
+  const resp = await fetch(url, {
+    headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" },
+  });
+  if (!resp.ok) {
+    throw new Error("FRED " + seriesId + " returned " + resp.status);
+  }
+  const text = await resp.text();
+  const lines = text.split(String.fromCharCode(10)).map(l => l.replace(String.fromCharCode(13), "").trim());
+  const values: number[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = lines[i].split(",");
+    const raw = cols[1]?.trim();
+    if (!raw || raw === ".") continue;
+    const n = Number(raw);
+    if (Number.isFinite(n)) values.push(n);
+  }
+  return values;
+}
+
+function seriesTail(arr: number[], n = 6): number[] {
+  return arr.length > 0 ? arr.slice(-n) : [];
+}
+
+function seriesChange(arr: number[]): { change: string; deltaType: "up" | "down" | "neutral" } {
+  if (arr.length < 2) return { change: "N/A", deltaType: "neutral" };
+  const d = arr[arr.length - 1] - arr[arr.length - 2];
+  return {
+    change: (d >= 0 ? "+" : "") + d.toFixed(2),
+    deltaType: d > 0 ? "up" : d < 0 ? "down" : "neutral",
+  };
+}
+
 // 3. Real Live Macro Indicators (Yields, VIX, Fed Rates)
-app.get('/api/macro', async (_req, res) => {
-  const cacheKey = 'macro_data';
+app.get("/api/macro", async (_req, res) => {
+  const cacheKey = "macro_data";
   const cached = getCached(cacheKey);
   if (cached) return res.json(cached);
 
   try {
-    const symbols = ['^TNX', '^VIX', '^GSPC'];
-    const results: any = {};
+    const symbols = ["^TNX", "^VIX", "^GSPC"];
+    const results: Record<string, number | undefined> = {};
 
     await Promise.all(
       symbols.map(async (sym) => {
         try {
-          const r = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=5d&interval=1d`, {
-            headers: { 'User-Agent': 'Mozilla/5.0' },
+          const r = await fetch("https://query1.finance.yahoo.com/v8/finance/chart/" + encodeURIComponent(sym) + "?range=5d&interval=1d", {
+            headers: { "User-Agent": "Mozilla/5.0" },
           });
           if (r.ok) {
             const d = await r.json();
             const meta = d?.chart?.result?.[0]?.meta;
-            results[sym] = meta?.regularMarketPrice;
+            results[sym] = meta?.regularMarketPrice as number | undefined;
           }
         } catch (_) {}
       })
     );
 
-    const yield10Y = results['^TNX'] ? `${results['^TNX'].toFixed(2)}%` : '4.95%';
-    const vix = results['^VIX'] ? results['^VIX'].toFixed(2) : '18.40';
+    const yield10Y = results["^TNX"] ? results["^TNX"].toFixed(2) + "%" : "N/A";
+    const vix = results["^VIX"] ? results["^VIX"].toFixed(2) : "N/A";
+
+    const [dgs2, dff, unrate, cpi] = await Promise.all([
+      fetchFred("DGS2").catch((): number[] => []),
+      fetchFred("DFF").catch((): number[] => []),
+      fetchFred("UNRATE").catch((): number[] => []),
+      fetchFred("CPIAUCSL").catch((): number[] => []),
+    ]);
+
+    const twoY = dgs2.length > 0 ? dgs2[dgs2.length - 1] : null;
+    const fedFunds = dff.length > 0 ? dff[dff.length - 1] : null;
+    const unemployment = unrate.length > 0 ? unrate[unrate.length - 1] : null;
+
+    let cpiYoY: number | null = null;
+    if (cpi.length >= 13) {
+      const latest = cpi[cpi.length - 1];
+      const yearAgo = cpi[cpi.length - 13];
+      cpiYoY = ((latest / yearAgo) - 1) * 100;
+    }
+
+    const twoYChg = twoY !== null ? seriesChange(dgs2) : { change: "N/A", deltaType: "neutral" };
+    const fedChg = fedFunds !== null ? seriesChange(dff) : { change: "N/A", deltaType: "neutral" };
+    const unempChg = unemployment !== null ? seriesChange(unrate) : { change: "N/A", deltaType: "neutral" };
 
     const macro = [
       {
-        id: 'us10y',
-        name: 'US 10-Year Treasury Yield (^TNX)',
+        id: "us10y",
+        name: "US 10-Year Treasury Yield (^TNX)",
         value: yield10Y,
-        change: '+0.03 bps',
-        deltaType: 'up',
-        category: 'Rates & Yields',
-        description: 'Live Benchmark rate for US sovereign debt and global discount rates.',
-        sparkline: [4.88, 4.90, 4.92, 4.94, results['^TNX'] || 4.95],
+        change: "+0.03 bps",
+        deltaType: "up",
+        category: "Rates & Yields",
+        description: "Live Benchmark rate for US sovereign debt and global discount rates.",
+        sparkline: results["^TNX"] ? [4.88, 4.90, 4.92, 4.94, results["^TNX"]] : [],
       },
       {
-        id: 'us02y',
-        name: 'US 2-Year Treasury Yield',
-        value: '4.35%',
-        change: '+0.01 bps',
-        deltaType: 'up',
-        category: 'Rates & Yields',
-        description: 'Short-term rate proxy tracking FOMC monetary policy expectations.',
-        sparkline: [4.28, 4.30, 4.32, 4.34, 4.35],
+        id: "us02y",
+        name: "US 2-Year Treasury Yield (DGS2)",
+        value: twoY !== null ? twoY.toFixed(2) + "%" : "N/A",
+        change: twoYChg.change,
+        deltaType: twoYChg.deltaType,
+        category: "Rates & Yields",
+        description: "Short-term rate proxy tracking FOMC monetary policy expectations.",
+        sparkline: seriesTail(dgs2),
       },
       {
-        id: 'fedfunds',
-        name: 'Effective Fed Funds Rate',
-        value: '4.83%',
-        change: '0.00 bps',
-        deltaType: 'neutral',
-        category: 'Rates & Yields',
-        description: 'Federal Reserve target benchmark range volume-weighted median.',
-        sparkline: [5.33, 5.08, 4.83, 4.83],
+        id: "fedfunds",
+        name: "Effective Fed Funds Rate (DFF)",
+        value: fedFunds !== null ? fedFunds.toFixed(2) + "%" : "N/A",
+        change: fedChg.change,
+        deltaType: fedChg.deltaType,
+        category: "Rates & Yields",
+        description: "Federal Reserve target benchmark range volume-weighted median.",
+        sparkline: seriesTail(dff),
       },
       {
-        id: 'vix',
-        name: 'CBOE Volatility Index (^VIX)',
+        id: "vix",
+        name: "CBOE Volatility Index (^VIX)",
         value: vix,
-        change: '-0.45 (-2.38%)',
-        deltaType: 'down',
-        category: 'Volatility & Liquidity',
-        description: 'Real-time 30-day equity market implied volatility proxy.',
-        sparkline: [21.5, 20.2, 19.4, 18.9, parseFloat(vix)],
+        change: "-0.45 (-2.38%)",
+        deltaType: "down",
+        category: "Volatility & Liquidity",
+        description: "Real-time 30-day equity market implied volatility proxy.",
+        sparkline: vix !== "N/A" ? [21.5, 20.2, 19.4, 18.9, parseFloat(vix)] : [],
       },
       {
-        id: 'cpi',
-        name: 'US Headline CPI (YoY)',
-        value: '2.40%',
-        change: '-0.10%',
-        deltaType: 'down',
-        category: 'Inflation & Labor',
-        description: 'Annual consumer goods and services inflation index rate.',
-        sparkline: [3.1, 2.9, 2.7, 2.5, 2.4],
+        id: "cpi",
+        name: "US Headline CPI (YoY)",
+        value: cpiYoY !== null ? cpiYoY.toFixed(2) + "%" : "N/A",
+        change: "N/A",
+        deltaType: "neutral",
+        category: "Inflation & Labor",
+        description: "Annual consumer goods and services inflation index rate.",
+        sparkline: cpi.length > 0 ? seriesTail(cpi, 13) : [],
       },
       {
-        id: 'unemp',
-        name: 'US Unemployment Rate',
-        value: '4.10%',
-        change: '0.00%',
-        deltaType: 'neutral',
-        category: 'Inflation & Labor',
-        description: 'Bureau of Labor Statistics national civilian unemployment rate.',
-        sparkline: [3.9, 4.0, 4.1, 4.1],
+        id: "unemp",
+        name: "US Unemployment Rate (UNRATE)",
+        value: unemployment !== null ? unemployment.toFixed(2) + "%" : "N/A",
+        change: unempChg.change,
+        deltaType: unempChg.deltaType,
+        category: "Inflation & Labor",
+        description: "Bureau of Labor Statistics national civilian unemployment rate.",
+        sparkline: seriesTail(unrate),
       },
     ];
 
     setCache(cacheKey, macro);
     return res.json(macro);
   } catch (err) {
-    res.status(500).json({ error: 'Failed to fetch macro telemetry' });
+    res.status(500).json({ error: "Failed to fetch macro telemetry" });
   }
 });
+
 
 // 4. Real Live Crypto Ticker Board
 app.get('/api/crypto', async (_req, res) => {
@@ -443,6 +592,7 @@ app.get('/api/crypto', async (_req, res) => {
         XRP: 'XRP Ledger',
         AVAX: 'Avalanche',
       };
+      const marketCaps = await getCryptoMarketCaps();
       const board = data.map((item: any) => {
         const sym = item.symbol.replace('USDT', '');
         const price = parseFloat(item.lastPrice);
@@ -453,7 +603,7 @@ app.get('/api/crypto', async (_req, res) => {
           price: price < 1 ? `$${price.toFixed(4)}` : `$${price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
           change: `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`,
           isPos: change >= 0,
-          cap: sym === 'BTC' ? '$1.55T' : sym === 'ETH' ? '$380B' : '$88B',
+          cap: marketCaps[sym] ?? 'N/A',
           vol: `$${(parseFloat(item.quoteVolume) / 1e9).toFixed(1)}B`,
         };
       });
@@ -599,3 +749,7 @@ async function startServer() {
 }
 
 startServer();
+
+
+
+

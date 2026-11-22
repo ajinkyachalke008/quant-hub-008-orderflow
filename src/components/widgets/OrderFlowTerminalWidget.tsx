@@ -11,6 +11,7 @@ import { LiquidationFeed } from '../widg e s/LiquidationFeed';
 import { RegimeBadge } from '../widg es/RegimeBadge';
 import { WhaleFeed } from '../widg es/WhaleFeed';
 import { useOrderFlowStore } from '../../stores/orderFlowStore';
+import { GammaExposureService } from '../../services/gammaExposureService';
 import { GEXPanel } from './GEXPanel';
 import { OptionsChain } from '../widg e s/OptionsChain';
 import { CrossExchangeSpread } from './CrossExchangeSpread';
@@ -22,6 +23,7 @@ export const OrderFlowTerminalWidget: React.FC = () => {
   const symbol = useOrderFlowStore((s) => s.symbol);
   const setSymbol = useOrderFlowStore((s) => s.setSymbol);
   const feedStates = useOrderFlowStore((s) => s.feedStates);
+  const gexProfile = useOrderFlowStore((s) => s.gexProfile);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [bottomCollapsed, setBottomCollapsed] = useState(false);
@@ -38,6 +40,12 @@ export const OrderFlowTerminalWidget: React.FC = () => {
   }, []);
 
   const feedOk = Object.values(feedStates).every((v) => v === 'CONNECTING' || v === 'LIVE');
+
+  useEffect(() => {
+    const svc = new GammaExposureService();
+    svc.start(0, (p) => useOrderFlowStore.getState().setGEXProfile(p));
+    return () => svc.stop();
+  }, []);
 
   return (
     <div aria-label="Order Flow Terminal" className="flex flex-col h-full w-full min-h-0" style={{ backgroundColor: 'var(--ot-bg-panel)', border: '1px solid var(--ot-border)', color: 'var(--ot-text-primary)' }}>
@@ -74,7 +82,7 @@ export const OrderFlowTerminalWidget: React.FC = () => {
       </div>
       <div style={{ borderTop: '1px solid var(--ot-border)', padding: 8, display: 'flex', gap: 8 }}>
         <GEXPanel />
-        <OptionsChain options={[]} />
+        <OptionsChain options={gexProfile?.options ?? []} underlyingPrice={gexProfile?.spot ?? 0} />
       </div>
       <div style={{ height: bottomCollapsed ? 48 : 200, borderTop: '1px solid var(--ot-border)' }}>
         <button aria-pressed={bottomCollapsed} onClick={() => setBottomCollapsed((v) => !v)} style={{ width: '100%', height: 48 }}>Toggle Bottom</button>

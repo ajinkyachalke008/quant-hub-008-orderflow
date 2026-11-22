@@ -6,6 +6,7 @@ import {
   NormalizedLiquidation,
   NormalizedDepth,
   NormalizedMarkPrice,
+  NormalizedOption,
   HeatmapColumn,
   DecisionSnapshot,
   DangerSnapshot,
@@ -17,6 +18,7 @@ export interface GEXProfile {
   spot: number;
   flipStrike: number | null;
   gammaProfile: { strike: number; callGamma: number; putGamma: number; netGamma: number }[];
+  options: NormalizedOption[];
   timestamp: number;
 }
 

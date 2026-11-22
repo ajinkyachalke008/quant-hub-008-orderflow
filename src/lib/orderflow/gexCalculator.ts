@@ -39,7 +39,7 @@ export function computeGexProfile(
   const STEPS = 101;
 
   let callWall = -Infinity;
-  let putWall = Infinity;
+  let putWall = -Infinity;
   let flipLevel: number | null = null;
   let maxPain: number | null = null;
   let minPain = Infinity;
@@ -68,7 +68,7 @@ export function computeGexProfile(
     putGexByStrike.push(putSum);
 
     if (callSum > callWall) callWall = p;
-    if (-putSum < putWall) putWall = p;
+    if (Math.abs(putSum) > putWall) putWall = p;
 
     if (flipLevel === null && i > 0 && netGex[i - 1] !== 0 && Math.sign(net) !== Math.sign(netGex[i - 1])) {
       flipLevel = p;
@@ -94,3 +94,4 @@ export function computeGexProfile(
     maxPain,
   };
 }
+
