@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { SCREENER_ITEMS } from '../../services/marketData';
+﻿import React, { useState, useEffect } from 'react';
+import { SCREENER_ITEMS, fetchQuotesForSymbols } from '../../services/marketData';
+import type { TickerQuote } from '../../types/terminal';
 import { useTerminal } from '../../context/TerminalContext';
 import { SlidersHorizontal, ArrowUpDown } from 'lucide-react';
 
@@ -12,7 +13,36 @@ export const ScreenerWidget: React.FC = () => {
 
   const sectors = ['all', 'Semiconductors', 'Software - Infrastructure', 'Internet Content', 'Auto Manufacturers'];
 
-  const filtered = SCREENER_ITEMS.filter((item) => {
+  const [liveQuotes, setLiveQuotes] = useState<Record<string, TickerQuote>>({});
+
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      fetchQuotesForSymbols(SCREENER_ITEMS.map((i) => i.symbol)).then((q) => {
+        if (active) setLiveQuotes(q);
+      });
+    };
+    load();
+    const id = setInterval(load, 15000);
+    return () => {
+      active = false;
+      clearInterval(id);
+    };
+  }, []);
+
+  const merged = SCREENER_ITEMS.map((item) => {
+    const q = liveQuotes[item.symbol];
+    if (!q) return item;
+    return {
+      ...item,
+      price: q.price,
+      change: q.changePercent,
+      marketCap: q.marketCap,
+      volume: q.volume,
+    };
+  });
+
+  const filtered = merged.filter((item) => {
     const matchesSearch =
       item.symbol.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -43,7 +73,7 @@ export const ScreenerWidget: React.FC = () => {
           <span className="text-xs font-bold tracking-wide" style={{ color: 'var(--ot-amber)' }}>
             EQUITY SCREENER
           </span>
-          <span className="text-[10px] text-slate-400">·</span>
+          <span className="text-[10px] text-slate-400">Â·</span>
           <span className="text-xs font-mono text-slate-400">({filtered.length} RESULTS)</span>
         </div>
 

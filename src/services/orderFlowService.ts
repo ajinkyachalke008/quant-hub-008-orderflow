@@ -30,6 +30,7 @@ const DECISION_INTERVAL_MS = 1000;
 const TRADE_STALE_MS = 10_000;
 const DEPTH_STALE_MS = 500;
 const MARK_STALE_MS = 5_000;
+const OI_POLL_MS = 30_000;
 
 export class OrderFlowService {
   private adapter: BinanceFuturesAdapter;
@@ -49,6 +50,11 @@ export class OrderFlowService {
   private smoothedScore = 0;
   private lastRegime: MarketRegime | null = null;
   private decisionTimer: ReturnType<typeof setInterval> | null = null;
+  private oiOpenInterest = 0;
+  private oiOpenInterestUsd = 0;
+  private oiMarkPrice = 0;
+  private oiTimestamp = 0;
+  private oiTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(symbol: string = 'BTCUSDT') {
     this.symbol = symbol;
@@ -72,6 +78,7 @@ export class OrderFlowService {
     this.started = true;
     this.adapter.connect();
     this.decisionTimer = setInterval(() => this.maybeComputeDecision(), DECISION_INTERVAL_MS);
+    this.startOiPolling();
     useOrderFlowStore.getState().setFeedState('adapter', 'CONNECTING');
   }
 
@@ -83,6 +90,7 @@ export class OrderFlowService {
       clearInterval(this.decisionTimer);
       this.decisionTimer = null;
     }
+    this.stopOiPolling();
     useOrderFlowStore.getState().setFeedState('adapter', 'DISCONNECTED');
   }
 
@@ -97,6 +105,7 @@ export class OrderFlowService {
     if (this.started) {
       this.adapter.connect();
       useOrderFlowStore.getState().setFeedState('adapter', 'CONNECTING');
+      this.pollOpenInterest();
     }
   }
 
@@ -113,6 +122,10 @@ export class OrderFlowService {
     this.smoothedScore = 0;
     this.lastRegime = null;
     this.lastCvdResetDate = '';
+    this.oiOpenInterest = 0;
+    this.oiOpenInterestUsd = 0;
+    this.oiMarkPrice = 0;
+    this.oiTimestamp = 0;
   }
 
   private onTrade(t: NormalizedTrade): void {
@@ -168,13 +181,91 @@ export class OrderFlowService {
           indexPrice: state.markPrice.indexPrice,
           fundingRate: state.markPrice.fundingRate,
           nextFundingTime: state.markPrice.nextFundingTime,
-          openInterest: 0,
-          openInterestUsd: 0,
+          openInterest: this.oiOpenInterest,
+          openInterestUsd: this.oiOpenInterestUsd,
           timestamp: state.markPrice.timestamp,
         }
       : null;
   }
 
+  // ---- Open Interest (USD-M Futures) ----
+  // Binance reports openInterest in BASE asset (e.g. BTC); USD value = oi * markPrice.
+  // Prefer the same-origin server proxy (/api/binance/oi/:symbol) so it works from
+  // geo-blocked regions; fall back to direct fapi (works from permitted regions only).
+  private startOiPolling(): void {
+    if (this.oiTimer !== null) return;
+    void this.pollOpenInterest();
+    this.oiTimer = setInterval(() => {
+      void this.pollOpenInterest();
+    }, OI_POLL_MS);
+  }
+
+  private stopOiPolling(): void {
+    if (this.oiTimer !== null) {
+      clearInterval(this.oiTimer);
+      this.oiTimer = null;
+    }
+  }
+
+  private pushFuturesContext(): void {
+    const ctx = this.currentMarkPrice();
+    if (ctx) useOrderFlowStore.getState().setFuturesContext(ctx);
+  }
+
+  private async pollOpenInterest(): Promise<void> {
+    if (typeof fetch !== 'function') return;
+    const symbol = this.symbol.toUpperCase();
+    try {
+      const resp = await fetch(`/api/binance/oi/${encodeURIComponent(symbol)}`);
+      if (resp.ok) {
+        const data = await resp.json();
+        if (this.applyOiPayload(data, symbol)) return;
+      }
+    } catch {
+      // proxy unreachable (e.g. running without the Express server) -> try direct
+    }
+    await this.pollOpenInterestDirect(symbol);
+  }
+
+  private async pollOpenInterestDirect(symbol: string): Promise<void> {
+    if (typeof fetch !== 'function') return;
+    try {
+      const [oiResp, piResp] = await Promise.all([
+        fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${encodeURIComponent(symbol)}`),
+        fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${encodeURIComponent(symbol)}`),
+      ]);
+      if (!oiResp.ok || !piResp.ok) return;
+      const oiData = await oiResp.json();
+      const piData = await piResp.json();
+      const oi = parseFloat(oiData?.openInterest);
+      const mark = parseFloat(piData?.markPrice);
+      if (!Number.isFinite(oi) || !Number.isFinite(mark)) return;
+      const timestamp = Number(oiData?.time) || Number(piData?.time) || Date.now();
+      this.applyOiPayload(
+        { openInterest: String(oi), markPrice: String(mark), timestamp },
+        symbol,
+      );
+    } catch {
+      // direct fetch blocked (geo-restricted) — keep last known values
+    }
+  }
+
+  private applyOiPayload(data: any, symbol: string): boolean {
+    if (!data || typeof data !== 'object') return false;
+    const oi = Number(data.openInterest);
+    const oiUsd = Number(data.openInterestUsd);
+    if (!Number.isFinite(oi) || !Number.isFinite(oiUsd)) return false;
+    const mark = Number(data.markPrice);
+    const ts = Number(data.timestamp);
+    // Guard against a symbol switch mid-flight.
+    if (this.symbol.toUpperCase() !== symbol) return false;
+    this.oiOpenInterest = oi;
+    this.oiOpenInterestUsd = oiUsd;
+    if (Number.isFinite(mark)) this.oiMarkPrice = mark;
+    this.oiTimestamp = Number.isFinite(ts) ? ts : Date.now();
+    this.pushFuturesContext();
+    return true;
+  }
   private maybeComputeDanger(): void {
     const now = Date.now();
     const liq60 = this.liquidations.filter((l) => l.t >= now - 60_000).reduce((s, l) => s + l.usd, 0);

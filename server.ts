@@ -716,6 +716,49 @@ app.get('/api/deribit/options', async (req, res) => {
 app.get('/api/proxy/status', (_req, res) => {
   res.json({ proxies: proxyManager.getStatusSnapshot() });
 });
+
+// Open Interest (USD-M Futures) proxy — server-side so it works from
+// regions where fapi.binance.com is geo-blocked. Binance reports openInterest
+// in the BASE asset quantity (e.g. BTC); its USD value = openInterest * markPrice.
+const oiCache: Record<string, { ts: number; data: any }> = {};
+const OI_CACHE_TTL_MS = 30000; // OI changes slowly; 30s TTL is plenty
+
+app.get('/api/binance/oi/:symbol', async (req, res) => {
+  const rawSym = req.params.symbol.toUpperCase();
+  if (!/^[A-Z0-9]{2,20}$/.test(rawSym)) {
+    return res.status(400).json({ error: `Invalid symbol: ${req.params.symbol}` });
+  }
+
+  const cached = oiCache[rawSym];
+  if (cached && Date.now() - cached.ts < OI_CACHE_TTL_MS) {
+    return res.json(cached.data);
+  }
+
+  try {
+    const [oiResp, piResp] = await Promise.all([
+      fetch(`https://fapi.binance.com/fapi/v1/openInterest?symbol=${encodeURIComponent(rawSym)}`),
+      fetch(`https://fapi.binance.com/fapi/v1/premiumIndex?symbol=${encodeURIComponent(rawSym)}`),
+    ]);
+    if (!oiResp.ok || !piResp.ok) {
+      return res.status(502).json({ error: `Binance fapi rejected OI request for ${rawSym}` });
+    }
+    const oiData = await oiResp.json();
+    const piData = await piResp.json();
+    const openInterest = parseFloat(oiData?.openInterest);
+    const markPrice = parseFloat(piData?.markPrice);
+    if (!Number.isFinite(openInterest) || !Number.isFinite(markPrice)) {
+      return res.status(502).json({ error: `Malformed OI payload for ${rawSym}` });
+    }
+    const openInterestUsd = openInterest * markPrice;
+    const timestamp = Number(oiData?.time) || Number(piData?.time) || Date.now();
+    const payload = { symbol: rawSym, openInterest, openInterestUsd, markPrice, timestamp };
+    oiCache[rawSym] = { ts: Date.now(), data: payload };
+    return res.json(payload);
+  } catch (err) {
+    console.warn(`[proxy] Binance OI fetch failed for ${rawSym}:`, err);
+    return res.status(502).json({ error: `Could not fetch Binance OI for ${rawSym}` });
+  }
+});
 // Production static assets or Vite middleware in dev
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {

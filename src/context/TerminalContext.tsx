@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
+﻿import React, { createContext, useContext, useEffect, useState, useMemo } from 'react';
 import {
   Candle,
   ChartStyle,
@@ -13,7 +13,7 @@ import {
   WidgetConfig,
   WidgetId,
 } from '../types/terminal';
-import { INITIAL_QUOTES, generateCandles } from '../services/marketData';
+import { INITIAL_QUOTES, createEmptyQuote } from '../services/marketData';
 import { executeCommand } from '../services/commandEngine';
 import { xauusdService, XauSpotTick, XauConnectionState } from '../services/xauusdDataService';
 import { computeTechnicalIndicators } from '../services/technicalAnalysis';
@@ -114,7 +114,7 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       command: 'symbol XAU/USD',
       timestamp: new Date().toLocaleTimeString(),
       status: 'success',
-      output: 'Loaded Gold Spot XAU/USD ($4,043.50 | +3.24%). Streaming Pyth Hermes / Binance depth.',
+      output: 'Loaded Gold Spot XAU/USD. Streaming live Pyth Hermes / Binance depth.',
     },
   ]);
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState<boolean>(false);
@@ -236,25 +236,9 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     if (['GOLD', 'XAU', 'XAUUSD'].includes(s)) s = 'XAU/USD';
 
     if (!quotes[s]) {
-      const fallbackPrice = 250.0;
       setQuotes((prev) => ({
         ...prev,
-        [s]: {
-          symbol: s,
-          name: `${s} Asset`,
-          price: fallbackPrice,
-          change: 1.5,
-          changePercent: 0.6,
-          open: fallbackPrice * 0.99,
-          high: fallbackPrice * 1.02,
-          low: fallbackPrice * 0.98,
-          volume: '15.4M',
-          marketCap: '$120.4B',
-          fiftyTwoWeekHigh: fallbackPrice * 1.25,
-          fiftyTwoWeekLow: fallbackPrice * 0.75,
-          assetType: 'equity',
-          sparkline: [fallbackPrice, fallbackPrice],
-        },
+        [s]: createEmptyQuote(s),
       }));
     }
     setActiveSymbolState(s);
@@ -265,11 +249,8 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   }, [quotes, activeSymbol]);
 
   const candles = useMemo(() => {
-    if (realCandles && realCandles.length > 0) {
-      return realCandles;
-    }
-    return computeTechnicalIndicators(generateCandles(activeQuote.price, timeframe));
-  }, [realCandles, activeQuote.price, timeframe, activeSymbol]);
+    return realCandles ?? [];
+  }, [realCandles]);
 
   const toggleOverlayIndicator = (ind: OverlayIndicator) => {
     setOverlayIndicators((prev) =>
@@ -353,7 +334,7 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     }
   };
 
-  // Keyboard shortcut listener: ⌘K or Ctrl+K for command palette
+  // Keyboard shortcut listener: âŒ˜K or Ctrl+K for command palette
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {

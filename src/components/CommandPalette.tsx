@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useTerminal } from '../context/TerminalContext';
 import { INITIAL_QUOTES } from '../services/marketData';
 import { Search, Terminal, TrendingUp, Sparkles, X } from 'lucide-react';
@@ -119,11 +119,11 @@ export const CommandPalette: React.FC = () => {
                     <span className="font-bold text-slate-100" style={{ color: 'var(--ot-amber)' }}>
                       {s.symbol}
                     </span>
-                    <span className="text-slate-400">·</span>
+                    <span className="text-slate-400">Â·</span>
                     <span className="text-slate-300">{s.name}</span>
                   </div>
                   <div className="tabular-nums font-semibold" style={{ color: 'var(--ot-text-primary)' }}>
-                    ${s.price.toFixed(2)}
+                    {s.price > 0 ? `$${s.price.toFixed(2)}` : '—'}
                   </div>
                 </div>
               ))}
@@ -164,7 +164,7 @@ export const CommandPalette: React.FC = () => {
           className="flex items-center justify-between px-4 py-2 border-t text-[11px] font-mono text-slate-400"
           style={{ borderColor: 'var(--ot-border)', backgroundColor: 'var(--ot-bg-panel)' }}
         >
-          <span>Navigate: ↑ / ↓</span>
+          <span>Navigate: â†‘ / â†“</span>
           <span>Execute: Enter</span>
           <span>Dismiss: Esc</span>
         </div>
