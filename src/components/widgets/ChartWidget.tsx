@@ -24,7 +24,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   const {
     activeSymbol,
     activeQuote,
-    candles,
+    candles: globalCandles,
     timeframe: globalTimeframe,
     setTimeframe: setGlobalTimeframe,
     chartStyle,
@@ -40,13 +40,27 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   } = useTerminal();
 
   const [localTimeframe, setLocalTimeframe] = useState<Timeframe>(customTimeframe || globalTimeframe);
-  const activeTimeframe = customTimeframe || localTimeframe;
+  const [localCandles, setLocalCandles] = useState<any[]>([]);
+  const [candlesLoading, setCandlesLoading] = useState(false);
+  const activeTimeframe = localTimeframe;
+  const candles = localCandles.length > 0 ? localCandles : globalCandles;
 
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [vpvrEnabled, setVpvrEnabled] = useState<boolean>(true);
   const [sessionsEnabled, setSessionsEnabled] = useState<boolean>(true);
   const [activePositions, setActivePositions] = useState<PaperPosition[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PaperOrder[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setCandlesLoading(true);
+    import('../../services/marketData').then(({ fetchLiveCandles }) => {
+      fetchLiveCandles(activeSymbol, activeTimeframe).then((cs: any) => {
+        if (!cancelled) { setLocalCandles(cs || []); setCandlesLoading(false); }
+      }).catch(() => { if (!cancelled) setCandlesLoading(false); });
+    });
+    return () => { cancelled = true; };
+  }, [activeSymbol, activeTimeframe]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -281,11 +295,8 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               <button
                 key={tf}
                 onClick={() => {
-                  if (customTimeframe) {
-                    setLocalTimeframe(tf);
-                  } else {
-                    setGlobalTimeframe(tf);
-                  }
+                  setLocalTimeframe(tf);
+                  if (!customTimeframe) setGlobalTimeframe(tf);
                 }}
                 className={`px-1.5 py-0.5 rounded transition-colors ${
                   activeTimeframe === tf ? 'font-bold' : 'opacity-60 hover:opacity-100'
