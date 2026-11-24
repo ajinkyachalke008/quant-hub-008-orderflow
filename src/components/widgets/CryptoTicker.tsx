@@ -1,6 +1,6 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTerminal } from '../../context/TerminalContext';
-import { GripHorizontal, RefreshCw, X, Minimize2, Maximize2, Coins, TrendingUp, WifiOff } from 'lucide-react';
+import { GripHorizontal, X, Minimize2, Maximize2, Coins, WifiOff } from 'lucide-react';
 
 export interface CryptoTickerItem {
   symbol: string;
@@ -8,8 +8,6 @@ export interface CryptoTickerItem {
   price: number;
   change: number;
   changePercent: number;
-  high24h: number;
-  low24h: number;
   sparkline: number[];
 }
 
@@ -21,6 +19,7 @@ export const CryptoTicker: React.FC = () => {
   const [position, setPosition] = useState<{ x: number; y: number }>({ x: 24, y: 80 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const prevPricesRef = useRef<Record<string, number>>({});
 
   const refreshPrices = async () => {
     try {
@@ -30,19 +29,19 @@ export const CryptoTicker: React.FC = () => {
         if (Array.isArray(data)) {
           setItems((prev) => {
             const next = { ...prev };
-            data.forEach((d: any) => {
+            data.forEach((d) => {
               if (['BTC', 'ETH', 'SOL'].includes(d.symbol)) {
                 const numericPrice = parseFloat(d.price.replace(/[^0-9.-]+/g, '')) || prev[d.symbol]?.price;
                 const numericChange = parseFloat(d.change.replace(/[^0-9.-]+/g, '')) || 0;
+                const prevSparkline = prev[d.symbol]?.sparkline || [];
+                const newSparkline = [...prevSparkline.slice(1), numericPrice].slice(-30);
                 next[d.symbol] = {
                   symbol: d.symbol,
                   name: d.name,
                   price: numericPrice,
                   change: +(numericPrice * (numericChange / 100)).toFixed(2),
                   changePercent: numericChange,
-                  high24h: +(numericPrice * 1.02).toFixed(2),
-                  low24h: +(numericPrice * 0.98).toFixed(2),
-                  sparkline: [...(prev[d.symbol]?.sparkline.slice(1) || []), numericPrice],
+                  sparkline: newSparkline,
                 };
               }
             });
@@ -96,34 +95,69 @@ export const CryptoTicker: React.FC = () => {
 
   const majorTickers = ['BTC', 'ETH', 'SOL'];
 
+  const renderSparkline = (data: number[], isPositive: boolean) => {
+    if (data.length < 2) return null;
+    const width = 70;
+    const height = 24;
+    const padding = 2;
+    const minVal = Math.min(...data);
+    const maxVal = Math.max(...data);
+    const range = maxVal - minVal || 1;
+    const points = data.map((val: number, i: number) => {
+      const x = padding + (i / (data.length - 1)) * (width - 2 * padding);
+      const y = height - padding - ((val - minVal) / range) * (height - 2 * padding);
+      return x + ',' + y;
+    }).join(' ');
+    const color = isPositive ? 'var(--ot-profit)' : 'var(--ot-loss)';
+    return (
+      <svg width={width} height={height} viewBox={'0 0 ' + width + ' ' + height} style={{ flexShrink: 0 }}>
+        <polyline
+          fill='none'
+          stroke={color}
+          strokeWidth='1.2'
+          strokeLinecap='round'
+          strokeLinejoin='round'
+          points={points}
+          style={{ filter: 'drop-shadow(0 0 2px ' + color + ')' }}
+        />
+      </svg>
+    );
+  };
+
+  const formatPrice = (price: number) => {
+    if (price >= 1000) return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    if (price >= 1) return price.toFixed(2);
+    return price.toFixed(4);
+  };
+
   return (
     <div
       style={{
-        transform: `translate3d(${position.x}px, ${position.y}px, 0)`,
+        transform: 'translate3d(' + position.x + 'px, ' + position.y + 'px, 0)',
         position: 'fixed',
         zIndex: 40,
         backgroundColor: 'var(--ot-bg-panel)',
         borderColor: 'var(--ot-border)',
       }}
-      className="w-80 rounded-lg border shadow-2xl overflow-hidden select-none"
+      className='w-80 rounded-lg border shadow-2xl overflow-hidden select-none'
     >
       {/* Draggable Header */}
       <div
         onMouseDown={handleMouseDown}
-        className="flex items-center justify-between px-3 py-2 border-b cursor-move"
+        className='flex items-center justify-between px-3 py-2 border-b cursor-move'
         style={{
           borderColor: 'var(--ot-border)',
           backgroundColor: 'var(--ot-bg-surface)',
         }}
       >
-        <div className="flex items-center gap-2">
-          <GripHorizontal className="w-4 h-4 text-slate-400" />
-          <Coins className="w-3.5 h-3.5" style={{ color: 'var(--ot-amber)' }} />
-          <span className="text-xs font-bold tracking-wide" style={{ color: 'var(--ot-amber)' }}>
+        <div className='flex items-center gap-2'>
+          <GripHorizontal className='w-4 h-4' style={{ color: 'var(--ot-text-muted)' }} />
+          <Coins className='w-3.5 h-3.5' style={{ color: 'var(--ot-amber)' }} />
+          <span className='text-xs font-bold tracking-wide' style={{ color: 'var(--ot-amber)' }}>
             CRYPTO TICKER
           </span>
           <span
-            className="text-[9px] font-mono px-1.5 py-0.2 rounded border flex items-center gap-1"
+            className='text-[9px] font-mono px-1.5 py-0.2 rounded border flex items-center gap-1'
             style={{
               borderColor: 'var(--ot-border)',
               color: isOnline ? 'var(--ot-profit)' : 'var(--ot-loss)',
@@ -132,36 +166,41 @@ export const CryptoTicker: React.FC = () => {
           >
             {isOnline ? (
               <>
-                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: 'var(--ot-profit)' }} />
+                <span
+                  className='w-1.5 h-1.5 rounded-full animate-pulse'
+                  style={{ backgroundColor: 'var(--ot-profit)', boxShadow: '0 0 4px var(--ot-profit)' }}
+                />
                 LIVE
               </>
             ) : (
               <>
-                <WifiOff className="w-2.5 h-2.5" />
+                <WifiOff className='w-2.5 h-2.5' />
                 OFFLINE
               </>
             )}
           </span>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className='flex items-center gap-1.5'>
           <button
             onClick={() => setIsMinimized(!isMinimized)}
-            className="p-1 rounded text-slate-400 hover:text-slate-100"
+            className='p-1 rounded' style={{ color: 'var(--ot-text-muted)' }}
+            onMouseOver={(e) => e.currentTarget.style.color = 'var(--ot-text-primary)'}
+            onMouseOut={(e) => e.currentTarget.style.color = 'var(--ot-text-muted)'}
           >
-            {isMinimized ? <Maximize2 className="w-3 h-3" /> : <Minimize2 className="w-3 h-3" />}
+            {isMinimized ? <Maximize2 className='w-3 h-3' /> : <Minimize2 className='w-3 h-3' />}
           </button>
         </div>
       </div>
 
       {/* Body */}
       {!isMinimized && (
-        <div className="p-2 space-y-1 divide-y" style={{ borderColor: 'var(--ot-border)' }}>
+        <div className='p-2 space-y-1' style={{ borderColor: 'var(--ot-border)' }}>
           {!isOnline && Object.keys(items).length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-6 gap-2 text-center">
-              <WifiOff className="w-8 h-8" style={{ color: 'var(--ot-loss)' }} />
-              <span className="text-xs font-mono text-slate-400">OFFLINE</span>
-              <span className="text-[10px] text-slate-500 px-3">unable to fetch live prices</span>
+            <div className='flex flex-col items-center justify-center py-6 gap-2 text-center'>
+              <WifiOff className='w-8 h-8' style={{ color: 'var(--ot-loss)' }} />
+              <span className='text-xs font-mono' style={{ color: 'var(--ot-text-muted)' }}>OFFLINE</span>
+              <span className='text-[10px] px-3' style={{ color: 'var(--ot-text-muted)' }}>retrying every 6s...</span>
             </div>
           ) : (
             majorTickers.map((sym) => {
@@ -169,21 +208,29 @@ export const CryptoTicker: React.FC = () => {
               if (!item) return null;
               const isPos = item.changePercent >= 0;
               const isActive = sym === activeSymbol;
+              const prevPrice = prevPricesRef.current[sym];
+              const priceChanged = prevPrice !== undefined && prevPrice !== item.price;
+              const priceDirection = priceChanged ? (item.price > prevPrice ? 'up' : 'down') : null;
+
+              if (priceChanged) {
+                prevPricesRef.current[sym] = item.price;
+              } else if (prevPrice === undefined) {
+                prevPricesRef.current[sym] = item.price;
+              }
 
               return (
                 <div
                   key={sym}
                   onClick={() => setActiveSymbol(sym)}
-                  className={`flex items-center justify-between p-2 rounded cursor-pointer transition-colors ${
-                    isActive ? 'bg-slate-800/40 border-l-2' : 'hover:bg-slate-800/20'
-                  }`}
+                  className={'flex items-center justify-between p-2 rounded cursor-pointer transition-colors relative overflow-hidden ' + (isActive ? 'bg-slate-800/40 border-l-2' : 'hover:bg-slate-800/20')}
                   style={{
                     borderColor: isActive ? 'var(--ot-cyan)' : 'transparent',
+                    borderBottom: '1px solid var(--ot-border)',
                   }}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className='flex items-center gap-2 min-w-0 flex-1'>
                     <div
-                      className="w-6 h-6 rounded flex items-center justify-center font-bold text-[10px] font-mono border"
+                      className='w-6 h-6 rounded flex items-center justify-center font-bold text-[10px] font-mono border flex-shrink-0'
                       style={{
                         borderColor: 'var(--ot-border)',
                         backgroundColor: 'var(--ot-bg-surface)',
@@ -192,23 +239,40 @@ export const CryptoTicker: React.FC = () => {
                     >
                       {sym}
                     </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold text-slate-100">{item.symbol}</span>
-                      <span className="text-[10px] text-slate-400">{item.name}</span>
+                    <div className='flex flex-col min-w-0'>
+                      <span className='text-xs font-bold truncate' style={{ color: 'var(--ot-text-primary)' }}>
+                        {item.symbol}
+                      </span>
+                      <span className='text-[10px] truncate' style={{ color: 'var(--ot-text-muted)' }}>
+                        {item.name}
+                      </span>
                     </div>
                   </div>
 
-                  <div className="text-right font-mono tabular-nums">
-                    <div className="text-xs font-bold text-slate-100">
-                      ${item.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  <div className='flex items-center gap-3 ml-2'>
+                    <div className='text-right font-mono tabular-nums'>
+                      <div
+                        className='text-xs font-bold transition-all duration-150'
+                        style={{
+                          color: 'var(--ot-text-primary)',
+                          backgroundColor: priceDirection === 'up' ? 'rgba(0, 230, 118, 0.15)' :
+                                         priceDirection === 'down' ? 'rgba(255, 59, 48, 0.15)' : 'transparent',
+                          borderRadius: '2px',
+                          padding: '1px 3px',
+                        }}
+                      >
+                        {'$' + formatPrice(item.price)}
+                      </div>
+                      <div
+                        className='text-[10px] font-semibold'
+                        style={{ color: isPos ? 'var(--ot-profit)' : 'var(--ot-loss)' }}
+                      >
+                        {isPos ? '▲ ' : '▼ '}
+                        {Math.abs(item.changePercent).toFixed(2)}%
+                      </div>
                     </div>
-                    <div
-                      className="text-[10px] font-semibold"
-                      style={{ color: isPos ? 'var(--ot-profit)' : 'var(--ot-loss)' }}
-                    >
-                      {isPos ? '+' : ''}
-                      {item.changePercent.toFixed(2)}%
-                    </div>
+
+                    {renderSparkline(item.sparkline, isPos)}
                   </div>
                 </div>
               );

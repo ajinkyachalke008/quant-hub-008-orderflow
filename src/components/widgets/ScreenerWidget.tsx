@@ -1,8 +1,42 @@
-﻿import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { SCREENER_ITEMS, fetchQuotesForSymbols } from '../../services/marketData';
 import type { TickerQuote } from '../../types/terminal';
 import { useTerminal } from '../../context/TerminalContext';
-import { SlidersHorizontal, ArrowUpDown } from 'lucide-react';
+import { ArrowUpDown, ChevronUp, ChevronDown } from 'lucide-react';
+
+const GRID_COLS =
+  'grid grid-cols-[minmax(0,2.4fr)_minmax(0,1.2fr)_minmax(0,1.2fr)_minmax(0,1.3fr)_minmax(0,1.3fr)_minmax(0,1.15fr)_minmax(0,1fr)] items-center';
+
+function sparkPoints(data: number[], w = 60, h = 20, pad = 2): string {
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+  const n = data.length;
+  return data
+    .map((v, i) => {
+      const x = (i / (n - 1)) * w;
+      const y = h - pad - ((v - min) / range) * (h - 2 * pad);
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
+}
+
+function formatVolume(raw: string): string {
+  if (!raw || raw === 'N/A') return '\u2014';
+  const n = parseFloat(raw.replace(/[^0-9.]/g, ''));
+  if (!isFinite(n) || n <= 0) return '\u2014';
+  const u = raw.toUpperCase();
+  let abs = n;
+  if (u.includes('T')) abs = n * 1e12;
+  else if (u.includes('B')) abs = n * 1e9;
+  else if (u.includes('M')) abs = n * 1e6;
+  else if (u.includes('K')) abs = n * 1e3;
+  if (abs >= 1e12) return `${(abs / 1e12).toFixed(2)}T`;
+  if (abs >= 1e9) return `${(abs / 1e9).toFixed(2)}B`;
+  if (abs >= 1e6) return `${(abs / 1e6).toFixed(2)}M`;
+  if (abs >= 1e3) return `${(abs / 1e3).toFixed(1)}K`;
+  return abs.toFixed(0);
+}
 
 export const ScreenerWidget: React.FC = () => {
   const { setActiveSymbol, activeSymbol } = useTerminal();
@@ -10,6 +44,7 @@ export const ScreenerWidget: React.FC = () => {
   const [selectedSector, setSelectedSector] = useState<string>('all');
   const [sortBy, setSortBy] = useState<'marketCap' | 'change' | 'peRatio'>('marketCap');
   const [sortAsc, setSortAsc] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const sectors = ['all', 'Semiconductors', 'Software - Infrastructure', 'Internet Content', 'Auto Manufacturers'];
 
@@ -19,7 +54,10 @@ export const ScreenerWidget: React.FC = () => {
     let active = true;
     const load = () => {
       fetchQuotesForSymbols(SCREENER_ITEMS.map((i) => i.symbol)).then((q) => {
-        if (active) setLiveQuotes(q);
+        if (active) {
+          setLiveQuotes(q);
+          setLastUpdated(new Date());
+        }
       });
     };
     load();
@@ -32,13 +70,13 @@ export const ScreenerWidget: React.FC = () => {
 
   const merged = SCREENER_ITEMS.map((item) => {
     const q = liveQuotes[item.symbol];
-    if (!q) return item;
     return {
       ...item,
-      price: q.price,
-      change: q.changePercent,
-      marketCap: q.marketCap,
-      volume: q.volume,
+      price: q ? q.price : item.price,
+      change: q ? q.changePercent : item.change,
+      marketCap: q ? q.marketCap : item.marketCap,
+      volume: q ? q.volume : item.volume,
+      sparkline: q && q.sparkline ? q.sparkline : [],
     };
   });
 
@@ -55,6 +93,17 @@ export const ScreenerWidget: React.FC = () => {
     if (sortBy === 'peRatio') diff = a.peRatio - b.peRatio;
     return sortAsc ? diff : -diff;
   });
+
+  const renderSortIcon = (col: typeof sortBy) => {
+    if (sortBy !== col) {
+      return <ArrowUpDown className="w-3 h-3 opacity-40 shrink-0" />;
+    }
+    return sortAsc ? (
+      <ChevronUp className="w-3 h-3 shrink-0" />
+    ) : (
+      <ChevronDown className="w-3 h-3 shrink-0" />
+    );
+  };
 
   return (
     <div
@@ -73,8 +122,10 @@ export const ScreenerWidget: React.FC = () => {
           <span className="text-xs font-bold tracking-wide" style={{ color: 'var(--ot-amber)' }}>
             EQUITY SCREENER
           </span>
-          <span className="text-[10px] text-slate-400">Â·</span>
-          <span className="text-xs font-mono text-slate-400">({filtered.length} RESULTS)</span>
+          <span className="text-[10px]" style={{ color: 'var(--ot-text-muted)' }}>&middot;</span>
+          <span className="text-xs font-mono" style={{ color: 'var(--ot-text-secondary)' }}>
+            ({filtered.length} RESULTS)
+          </span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -112,37 +163,55 @@ export const ScreenerWidget: React.FC = () => {
 
       {/* Table Columns */}
       <div
-        className="grid grid-cols-12 px-3 py-1.5 text-[10px] font-mono border-b text-slate-400"
-        style={{ borderColor: 'var(--ot-border)' }}
+        className={`${GRID_COLS} sticky top-0 z-10 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wide border-b`}
+        style={{
+          borderColor: 'var(--ot-border)',
+          backgroundColor: 'var(--ot-bg-surface)',
+          color: 'var(--ot-text-muted)',
+        }}
       >
-        <div className="col-span-3 text-left">TICKER / SECTOR</div>
-        <div className="col-span-2 text-right">PRICE</div>
+        <div className="text-left">TICKER / SECTOR</div>
+        <div className="text-right">PRICE</div>
         <button
           onClick={() => {
             setSortBy('change');
             setSortAsc(!sortAsc);
           }}
-          className="col-span-2 text-right hover:text-slate-200"
+          className={`flex items-center justify-end gap-1 uppercase tracking-wide transition-colors ${
+            sortBy === 'change' ? '' : 'hover:text-[var(--ot-text-primary)]'
+          }`}
+          style={{ color: sortBy === 'change' ? 'var(--ot-cyan)' : undefined }}
         >
-          24H %
+          <span>24H %</span>
+          {renderSortIcon('change')}
         </button>
+        <div className="text-right">TREND</div>
         <button
           onClick={() => {
             setSortBy('marketCap');
             setSortAsc(!sortAsc);
           }}
-          className="col-span-3 text-right hover:text-slate-200"
+          className={`flex items-center justify-end gap-1 uppercase tracking-wide transition-colors ${
+            sortBy === 'marketCap' ? '' : 'hover:text-[var(--ot-text-primary)]'
+          }`}
+          style={{ color: sortBy === 'marketCap' ? 'var(--ot-cyan)' : undefined }}
         >
-          MKT CAP
+          <span>MKT CAP</span>
+          {renderSortIcon('marketCap')}
         </button>
+        <div className="text-right">VOLUME</div>
         <button
           onClick={() => {
             setSortBy('peRatio');
             setSortAsc(!sortAsc);
           }}
-          className="col-span-2 text-right hover:text-slate-200"
+          className={`flex items-center justify-end gap-1 uppercase tracking-wide transition-colors ${
+            sortBy === 'peRatio' ? '' : 'hover:text-[var(--ot-text-primary)]'
+          }`}
+          style={{ color: sortBy === 'peRatio' ? 'var(--ot-cyan)' : undefined }}
         >
-          P/E
+          <span>P/E</span>
+          {renderSortIcon('peRatio')}
         </button>
       </div>
 
@@ -156,39 +225,100 @@ export const ScreenerWidget: React.FC = () => {
             <div
               key={item.symbol}
               onClick={() => setActiveSymbol(item.symbol)}
-              className={`grid grid-cols-12 items-center px-3 py-2 text-xs font-mono tabular-nums cursor-pointer transition-colors ${
-                isActive ? 'border-l-2' : 'hover:bg-slate-800/25'
+              className={`${GRID_COLS} group px-3 py-2 text-xs font-mono tabular-nums cursor-pointer transition-colors border-l-2 ${
+                isActive
+                  ? ''
+                  : 'border-l-transparent odd:bg-white/[0.015] hover:bg-[var(--ot-bg-hover)]! hover:border-l-[color:var(--ot-cyan)]'
               }`}
               style={{
-                backgroundColor: isActive ? 'var(--ot-bg-hover)' : 'transparent',
-                borderColor: isActive ? 'var(--ot-cyan)' : 'var(--ot-border)',
+                backgroundColor: isActive ? 'var(--ot-bg-hover)' : undefined,
+                borderLeftColor: isActive ? 'var(--ot-cyan)' : undefined,
               }}
             >
-              <div className="col-span-3 flex flex-col truncate">
-                <span className="font-bold" style={{ color: isActive ? 'var(--ot-amber)' : 'var(--ot-text-primary)' }}>
+              <div className="flex flex-col truncate min-w-0">
+                <span
+                  className="font-bold truncate"
+                  style={{ color: isActive ? 'var(--ot-amber)' : 'var(--ot-text-primary)' }}
+                >
                   {item.symbol}
                 </span>
-                <span className="text-[10px] text-slate-400 truncate">{item.sector}</span>
+                <span className="text-[10px] truncate" style={{ color: 'var(--ot-text-muted)' }}>
+                  {item.sector}
+                </span>
               </div>
 
-              <div className="col-span-2 text-right font-semibold text-slate-100">
+              <div className="text-right font-semibold" style={{ color: 'var(--ot-text-primary)' }}>
                 ${item.price.toFixed(2)}
               </div>
 
               <div
-                className="col-span-2 text-right font-medium"
+                className="flex items-center justify-end gap-0.5 font-medium"
                 style={{ color: isPos ? 'var(--ot-profit)' : 'var(--ot-loss)' }}
               >
-                {isPos ? '+' : ''}
-                {item.change.toFixed(2)}%
+                {isPos ? (
+                  <ChevronUp className="w-3 h-3 shrink-0" />
+                ) : (
+                  <ChevronDown className="w-3 h-3 shrink-0" />
+                )}
+                <span>
+                  {isPos ? '+' : ''}
+                  {item.change.toFixed(2)}%
+                </span>
               </div>
 
-              <div className="col-span-3 text-right text-slate-300">{item.marketCap}</div>
+              <div className="flex items-center justify-end min-w-0">
+                {item.sparkline.length >= 2 ? (
+                  <svg
+                    viewBox="0 0 60 20"
+                    preserveAspectRatio="none"
+                    width="100%"
+                    height="16"
+                    className="block max-w-[64px]"
+                  >
+                    <polyline
+                      fill="none"
+                      stroke={isPos ? 'var(--ot-profit)' : 'var(--ot-loss)'}
+                      strokeWidth={1.5}
+                      vectorEffect="non-scaling-stroke"
+                      strokeLinejoin="round"
+                      strokeLinecap="round"
+                      points={sparkPoints(item.sparkline)}
+                    />
+                  </svg>
+                ) : (
+                  <span style={{ color: 'var(--ot-text-muted)' }}>&mdash;</span>
+                )}
+              </div>
 
-              <div className="col-span-2 text-right text-slate-400">{item.peRatio.toFixed(1)}</div>
+              <div className="text-right" style={{ color: 'var(--ot-text-secondary)' }}>
+                {item.marketCap}
+              </div>
+
+              <div className="text-right" style={{ color: 'var(--ot-text-secondary)' }}>
+                {formatVolume(item.volume)}
+              </div>
+
+              <div className="text-right" style={{ color: 'var(--ot-text-muted)' }}>
+                {item.peRatio.toFixed(1)}
+              </div>
             </div>
           );
         })}
+      </div>
+
+      {/* Footer */}
+      <div
+        className="flex items-center justify-between px-3 py-1.5 text-[10px] font-mono uppercase tracking-wide border-t"
+        style={{
+          borderColor: 'var(--ot-border)',
+          backgroundColor: 'var(--ot-bg-surface)',
+          color: 'var(--ot-text-muted)',
+        }}
+      >
+        <span>{filtered.length} SYMBOLS</span>
+        <span>
+          UPDATED {lastUpdated ? lastUpdated.toLocaleTimeString('en-GB') : '\u2014'}
+        </span>
       </div>
     </div>
   );

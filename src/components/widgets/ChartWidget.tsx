@@ -405,7 +405,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               overlayIndicators.includes('donchian') ? 'font-bold' : 'opacity-50 hover:opacity-100'
             }`}
             style={{
-              borderColor: overlayIndicators.includes('donchian') ? '#38bdf8' : 'var(--ot-border)',
+              borderColor: overlayIndicators.includes('donchian') ? 'var(--ot-cyan)' : 'var(--ot-border)',
               backgroundColor: overlayIndicators.includes('donchian') ? 'rgba(56,189,248,0.2)' : 'transparent',
               color: overlayIndicators.includes('donchian') ? '#7dd3fc' : 'var(--ot-text-secondary)',
             }}
@@ -435,7 +435,15 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
             </linearGradient>
           </defs>
 
-          {/* Horizontal Price Grid Lines */}
+          {/* Vertical Grid Lines */}
+        {Array.from({ length: 8 }).map((_, i) => {
+          const x = (chartWidth / 7) * i;
+          return (
+            <line key={'grid-x-'+i} x1={x} y1="0" x2={x} y2={pricePlotHeight} stroke="rgba(255,255,255,0.04)" strokeWidth="1" />
+          );
+        })}
+
+        {/* Horizontal Price Grid Lines */}
           {[0.1, 0.25, 0.4, 0.55, 0.7, 0.85].map((pct, i) => {
             const y = pricePlotHeight * pct;
             const priceVal = maxPrice - pct * (maxPrice - minPrice);
@@ -449,7 +457,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                   fontSize="9"
                   fontFamily="monospace"
                 >
-                  ${priceVal.toFixed(2)}
+                  ${priceVal.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </text>
               </g>
             );
@@ -567,14 +575,14 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                 y1={getY(sessionLiquidity.pdh)}
                 x2={chartWidth}
                 y2={getY(sessionLiquidity.pdh)}
-                stroke="#f97316"
+                stroke="var(--ot-amber)"
                 strokeWidth="1"
                 strokeDasharray="3 3"
               />
               <text
                 x={chartWidth - 90}
                 y={getY(sessionLiquidity.pdh) - 3}
-                fill="#f97316"
+                fill="var(--ot-amber)"
                 fontSize="9"
                 fontFamily="monospace"
                 fontWeight="bold"
@@ -588,14 +596,14 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                 y1={getY(sessionLiquidity.pdl)}
                 x2={chartWidth}
                 y2={getY(sessionLiquidity.pdl)}
-                stroke="#f97316"
+                stroke="var(--ot-amber)"
                 strokeWidth="1"
                 strokeDasharray="3 3"
               />
               <text
                 x={chartWidth - 90}
                 y={getY(sessionLiquidity.pdl) + 11}
-                fill="#f97316"
+                fill="var(--ot-amber)"
                 fontSize="9"
                 fontFamily="monospace"
                 fontWeight="bold"
@@ -753,8 +761,8 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           {/* Institutional Pivot Lines (P, R1, R2, S1, S2) */}
           {pivotPoints && (
             <>
-              <line x1="0" y1={getY(pivotPoints.p)} x2={chartWidth} y2={getY(pivotPoints.p)} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3 3" />
-              <text x={chartWidth - 60} y={getY(pivotPoints.p) - 2} fill="#38bdf8" fontSize="9" fontFamily="monospace">P: ${pivotPoints.p}</text>
+              <line x1="0" y1={getY(pivotPoints.p)} x2={chartWidth} y2={getY(pivotPoints.p)} stroke="var(--ot-cyan)" strokeWidth="1" strokeDasharray="3 3" />
+              <text x={chartWidth - 60} y={getY(pivotPoints.p) - 2} fill="var(--ot-cyan)" fontSize="9" fontFamily="monospace">P: ${pivotPoints.p}</text>
               <line x1="0" y1={getY(pivotPoints.r1)} x2={chartWidth} y2={getY(pivotPoints.r1)} stroke="var(--ot-profit)" strokeWidth="0.8" strokeDasharray="2 2" />
               <text x={chartWidth - 65} y={getY(pivotPoints.r1) - 2} fill="var(--ot-profit)" fontSize="9" fontFamily="monospace">R1: ${pivotPoints.r1}</text>
               <line x1="0" y1={getY(pivotPoints.r2)} x2={chartWidth} y2={getY(pivotPoints.r2)} stroke="var(--ot-profit)" strokeWidth="0.8" strokeDasharray="2 2" />
@@ -774,7 +782,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
             </>
           )}
           {sma20Path && <path d={sma20Path} fill="none" stroke="var(--ot-amber)" strokeWidth="1.2" opacity="0.85" />}
-          {sma50Path && <path d={sma50Path} fill="none" stroke="#60a5fa" strokeWidth="1.2" opacity="0.85" />}
+          {sma50Path && <path d={sma50Path} fill="none" stroke="var(--ot-cyan)" strokeWidth="1.2" opacity="0.85" />}
           {sma200Path && <path d={sma200Path} fill="none" stroke="#f43f5e" strokeWidth="1.5" opacity="0.85" />}
           {ema9Path && <path d={ema9Path} fill="none" stroke="#34d399" strokeWidth="1.1" opacity="0.85" />}
           {ema21Path && <path d={ema21Path} fill="none" stroke="#fbbf24" strokeWidth="1.1" opacity="0.85" />}
@@ -782,10 +790,10 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
 
           {/* Phase II: Advanced Indicators Overlay Paths */}
           {/* Ichimoku Kinko Hyo: Tenkan (red), Kijun (blue), Senkou A/B (cloud) */}
-          {tenkanPath && <path d={tenkanPath} fill="none" stroke="#ef4444" strokeWidth="1.2" opacity="0.9" />}
+          {tenkanPath && <path d={tenkanPath} fill="none" stroke="var(--ot-loss)" strokeWidth="1.2" opacity="0.9" />}
           {kijunPath && <path d={kijunPath} fill="none" stroke="#3b82f6" strokeWidth="1.2" opacity="0.9" />}
           {senkouAPath && <path d={senkouAPath} fill="none" stroke="#22c55e" strokeWidth="1" strokeDasharray="3 2" opacity="0.8" />}
-          {senkouBPath && <path d={senkouBPath} fill="none" stroke="#f97316" strokeWidth="1" strokeDasharray="3 2" opacity="0.8" />}
+          {senkouBPath && <path d={senkouBPath} fill="none" stroke="var(--ot-amber)" strokeWidth="1" strokeDasharray="3 2" opacity="0.8" />}
 
           {/* VWAP Standard Deviation Bands (±1, ±2 SD) */}
           {vwapSd1UpperPath && vwapSd1LowerPath && (
@@ -804,11 +812,47 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           {/* Donchian Channels (20) */}
           {donchianUpperPath && donchianLowerPath && (
             <>
-              <path d={donchianUpperPath} fill="none" stroke="#38bdf8" strokeWidth="1" strokeDasharray="4 2" opacity="0.8" />
-              <path d={donchianLowerPath} fill="none" stroke="#38bdf8" strokeWidth="1" strokeDasharray="4 2" opacity="0.8" />
+              <path d={donchianUpperPath} fill="none" stroke="var(--ot-cyan)" strokeWidth="1" strokeDasharray="4 2" opacity="0.8" />
+              <path d={donchianLowerPath} fill="none" stroke="var(--ot-cyan)" strokeWidth="1" strokeDasharray="4 2" opacity="0.8" />
               {donchianMidPath && <path d={donchianMidPath} fill="none" stroke="#7dd3fc" strokeWidth="0.7" strokeDasharray="2 2" opacity="0.6" />}
             </>
           )}
+
+          {/* Watermark */}
+          <text
+            x={chartWidth / 2}
+            y={pricePlotHeight / 2}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fill="var(--ot-text-primary)"
+            fontSize="32"
+            fontFamily="monospace"
+            fontWeight="bold"
+            opacity="0.05"
+            pointerEvents="none"
+          >
+            {activeSymbol}  OpenTerminal
+          </text>
+
+          {/* Volume Histogram (bottom band) */}
+          {candles.map((c, i) => {
+            const x = i * stepX;
+            const isUp = c.close >= c.open;
+            const color = isUp ? 'var(--ot-profit)' : 'var(--ot-loss)';
+            const volH = maxVol > 0 ? ((c.volume || 0) / maxVol) * (pricePlotHeight * 0.16) : 0;
+            const barW = Math.max(2, stepX * 0.6);
+            return (
+              <rect
+                key={'vol-'+i}
+                x={x - barW / 2}
+                y={pricePlotHeight - volH}
+                width={barW}
+                height={volH}
+                fill={color}
+                opacity="0.45"
+              />
+            );
+          })}
 
           {/* Candlesticks & Price Action Rendering */}
           {chartStyle === 'area' ? (
@@ -917,6 +961,25 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                 strokeWidth="1"
                 opacity="0.8"
               />
+              <rect
+                x={chartWidth + 2}
+                y={getY(candles[effectiveHoverIndex].close) - 9}
+                width="78"
+                height="18"
+                fill="var(--ot-cyan)"
+                rx="3"
+              />
+              <text
+                x={chartWidth + 41}
+                y={getY(candles[effectiveHoverIndex].close) + 4}
+                textAnchor="middle"
+                fill="#07090e"
+                fontSize="9"
+                fontFamily="monospace"
+                fontWeight="bold"
+              >
+                {candles[effectiveHoverIndex].close.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </text>
               <circle cx={effectiveHoverIndex * stepX} cy={getY(candles[effectiveHoverIndex].close)} r="3.5" fill="var(--ot-amber)" />
               <rect
                 x={effectiveHoverIndex * stepX - 35}
@@ -939,6 +1002,24 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               </text>
             </g>
           )}
+          {/* X-axis time labels */}
+          {(() => {
+            const n = 6;
+            const out = [];
+            for (let i = 0; i < n; i++) {
+              const ci = Math.round((i / (n - 1)) * (candles.length - 1));
+              const c = candles[ci];
+              if (!c) continue;
+              const x = ci * stepX;
+              out.push(
+                <text key={'xt-'+i} x={x} y={pricePlotHeight + 12} textAnchor="middle" fill="var(--ot-text-muted)" fontSize="9" fontFamily="monospace">
+                  {c.time}
+                </text>
+              );
+            }
+            return out;
+          })()}
+
         </svg>
 
         {/* Legend Overlay at Bottom-Left of Chart */}
