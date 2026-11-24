@@ -17,6 +17,7 @@ import { INITIAL_QUOTES, createEmptyQuote } from '../services/marketData';
 import { executeCommand } from '../services/commandEngine';
 import { xauusdService, XauSpotTick, XauConnectionState } from '../services/xauusdDataService';
 import { computeTechnicalIndicators } from '../services/technicalAnalysis';
+import { liveCandleService } from '../services/liveCandleService';
 
 interface TerminalContextValue {
   activeSymbol: string;
@@ -214,13 +215,27 @@ export const TerminalProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   // Initial load
   useEffect(() => {
     fetchLiveQuote(activeSymbol);
-    fetchLiveCandles(activeSymbol, timeframe);
     ['XAU/USD', 'NVDA', 'AAPL', 'MSFT', 'BTC', 'ETH', 'SOL', 'SPY'].forEach((s) => fetchLiveQuote(s));
   }, []);
 
   useEffect(() => {
     fetchLiveQuote(activeSymbol);
-    fetchLiveCandles(activeSymbol, timeframe);
+    if (!activeSymbol) return;
+    let cancelled = false;
+    const start = async () => {
+      try { await liveCandleService.start(activeSymbol, timeframe); } catch (_) {}
+    };
+    start();
+    const unsub = liveCandleService.subscribe((liveCandles) => {
+      if (cancelled) return;
+      const withInd = computeTechnicalIndicators(liveCandles);
+      setRealCandles(withInd);
+    });
+    return () => {
+      cancelled = true;
+      unsub();
+      liveCandleService.stop();
+    };
   }, [activeSymbol, timeframe]);
 
   // Periodic polling for active symbol every 8s
