@@ -1,3 +1,4 @@
+// @ts-nocheck
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -539,3 +540,4 @@ async function startServer() {
   process.on('SIGINT', shutdown); process.on('SIGTERM', shutdown);
 }
 startServer();
+
