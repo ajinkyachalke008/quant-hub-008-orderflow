@@ -51,6 +51,18 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   const [activePositions, setActivePositions] = useState<PaperPosition[]>([]);
   const [pendingOrders, setPendingOrders] = useState<PaperOrder[]>([]);
 
+  // Feature 3: log/linear scale toggle
+  const [logScale, setLogScale] = useState(false);
+
+  // Feature 4: pan / zoom state
+  const [visibleCount, setVisibleCount] = useState<number>(120);
+  const [offset, setOffset] = useState<number>(0);
+  const prevTimeframeRef = useRef<Timeframe | null>(null);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartOffset = useRef(0);
+  const dragStartCount = useRef(0);
+
   useEffect(() => {
     let cancelled = false;
     setCandlesLoading(true);
@@ -61,6 +73,20 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
     });
     return () => { cancelled = true; };
   }, [activeSymbol, activeTimeframe]);
+
+  // Reset pan/zoom to show latest candles on first load or timeframe change
+  useEffect(() => {
+    if (candles.length === 0) return;
+    const prev = prevTimeframeRef.current;
+    const firstLoad = prev === null;
+    const tfChanged = prev !== null && prev !== activeTimeframe;
+    if (firstLoad || tfChanged) {
+      prevTimeframeRef.current = activeTimeframe;
+      const vc = Math.min(120, candles.length);
+      setVisibleCount(vc);
+      setOffset(Math.max(0, candles.length - vc));
+    }
+  }, [activeTimeframe, candles.length]);
 
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -78,26 +104,32 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
     return unsub;
   }, [activeSymbol]);
 
-  // Min and max price calculation for chart bounds
-  const { minPrice, maxPrice, maxVol } = useMemo(() => {
-    if (!candles.length) return { minPrice: 0, maxPrice: 100, maxVol: 1000 };
+  // --- Pan / zoom derivation (operates on the visible slice) ---
+  const effCount = Math.max(1, Math.min(visibleCount, candles.length || 1));
+  const maxOffset = Math.max(0, (candles.length || 1) - effCount);
+  const off = Math.max(0, Math.min(offset, maxOffset));
+  const visCandles = candles.slice(off, off + effCount);
+  const visLen = visCandles.length;
+
+  // Min / max price over the VISIBLE slice (rescales vertically on zoom)
+  const { minPrice: visMinPrice, maxPrice: visMaxPrice, maxVol: visMaxVol } = useMemo(() => {
+    const src = visLen ? visCandles : candles;
+    if (!src.length) return { minPrice: 0, maxPrice: 100, maxVol: 1000 };
     let min = Infinity;
     let max = -Infinity;
     let maxV = 0;
-
-    candles.forEach((c) => {
+    src.forEach((c) => {
       min = Math.min(min, c.low, c.lowerBand ?? min);
       max = Math.max(max, c.high, c.upperBand ?? max);
       maxV = Math.max(maxV, c.volume);
     });
-
     const buffer = (max - min) * 0.05;
     return {
       minPrice: Math.max(0, min - buffer),
       maxPrice: max + buffer,
       maxVol: maxV * 1.15,
     };
-  }, [candles]);
+  }, [visCandles, candles]);
 
   const activeCandle =
     effectiveHoverIndex !== null && candles[effectiveHoverIndex]
@@ -114,12 +146,19 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   const rightAxisWidth = 85;
   const chartWidth = svgWidth - rightAxisWidth;
 
+  // Feature 1 & 3: price -> pixel (log-aware), over visible price range
   const getY = (val: number) => {
-    if (maxPrice === minPrice) return pricePlotHeight / 2;
-    return pricePlotHeight - ((val - minPrice) / (maxPrice - minPrice)) * pricePlotHeight;
+    if (visMaxPrice === visMinPrice) return pricePlotHeight / 2;
+    if (logScale) {
+      if (val <= 0 || visMinPrice <= 0 || visMaxPrice <= 0) {
+        return pricePlotHeight - ((val - visMinPrice) / (visMaxPrice - visMinPrice)) * pricePlotHeight;
+      }
+      return ((Math.log(visMaxPrice) - Math.log(val)) / (Math.log(visMaxPrice) - Math.log(visMinPrice))) * pricePlotHeight;
+    }
+    return pricePlotHeight - ((val - visMinPrice) / (visMaxPrice - visMinPrice)) * pricePlotHeight;
   };
 
-  const stepX = candles.length > 1 ? chartWidth / (candles.length - 1) : chartWidth;
+  const stepX = visLen > 1 ? chartWidth / (visLen - 1) : chartWidth;
 
   // Volume Profile Visible Range (VPVR) Calculation
   const volumeProfile = useMemo(() => {
@@ -146,23 +185,105 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
     return calculatePivotPoints(prior.high, prior.low, prior.close, pivotType);
   }, [candles, pivotType]);
 
-  // Generate SVG path for line/area chart
-  const linePath = useMemo(() => {
-    if (!candles.length) return '';
-    return candles.reduce((acc, c, i) => {
+  // EMA helper (used for MACD)
+  const emaArray = (values: number[], period: number) => {
+    const out: (number | null)[] = Array(values.length).fill(null);
+    if (!values.length) return out;
+    const alpha = 2 / (period + 1);
+    let ema: number | null = null;
+    for (let i = 0; i < values.length; i++) {
+      const v = values[i];
+      if (v == null || Number.isNaN(v)) { ema = null; continue; }
+      if (ema === null) ema = v;
+      else ema = alpha * v + (1 - alpha) * ema;
+      out[i] = ema;
+    }
+    return out;
+  };
+
+  // Feature 5: MACD (12/26/9) computed from visible closes
+  const macdData = useMemo(() => {
+    if (!visLen) return [];
+    const closes = visCandles.map((c) => c.close);
+    const ema12 = emaArray(closes, 12);
+    const ema26 = emaArray(closes, 26);
+    const macdLine = closes.map((_, i) => {
+      const a = ema12[i], b = ema26[i];
+      return a == null || b == null ? null : a - b;
+    });
+    const signalLine: (number | null)[] = [];
+    let prev: number | null = null;
+    macdLine.forEach((m) => {
+      if (m == null) { signalLine.push(null); prev = null; }
+      else {
+        if (prev == null) prev = m;
+        else prev = 0.2 * m + 0.8 * prev;
+        signalLine.push(prev);
+      }
+    });
+    return visCandles.map((_, i) => ({
+      macd: macdLine[i],
+      signal: signalLine[i],
+      histogram: (macdLine[i] == null || signalLine[i] == null) ? null : macdLine[i]! - signalLine[i]!,
+    }));
+  }, [visCandles]);
+
+  const macdBounds = useMemo(() => {
+    let min = Infinity;
+    let max = -Infinity;
+    macdData.forEach((d) => {
+      [d.macd, d.signal].forEach((v) => { if (v != null) { min = Math.min(min, v); max = Math.max(max, v); } });
+    });
+    min = Math.min(min, 0);
+    max = Math.max(max, 0);
+    if (min === Infinity) return { min: 0, max: 1 };
+    if (max === min) { min -= 1; max += 1; }
+    const pad = (max - min) * 0.15;
+    return { min: min - pad, max: max + pad };
+  }, [macdData]);
+
+  const macdValY = (v: number) => subPlotHeight - ((v - macdBounds.min) / (macdBounds.max - macdBounds.min)) * subPlotHeight;
+  const macdZeroY = macdValY(0);
+
+  // Feature 6: 20-period volume moving average over visible slice
+  const volSma20 = useMemo(() => {
+    const out: (number | null)[] = Array(visLen).fill(null);
+    for (let i = 19; i < visLen; i++) {
+      let sum = 0;
+      for (let k = 0; k < 20; k++) sum += visCandles[i - k].volume || 0;
+      out[i] = sum / 20;
+    }
+    return out;
+  }, [visCandles]);
+
+  let volMaPath = '';
+  { let started = false;
+    volSma20.forEach((v, i) => {
+      if (v == null) return;
       const x = i * stepX;
+      const y = pricePlotHeight - (v / visMaxVol) * (pricePlotHeight * 0.16);
+      if (!started) { volMaPath = `M ${x} ${y}`; started = true; }
+      else volMaPath += ` L ${x} ${y}`;
+    });
+  }
+
+  // Generate SVG path for line/area chart (over visible slice)
+  const linePath = useMemo(() => {
+    if (!visLen) return '';
+    return visCandles.reduce((acc, c, j) => {
+      const x = j * stepX;
       const y = getY(c.close);
-      return i === 0 ? `M ${x} ${y}` : `${acc} L ${x} ${y}`;
+      return j === 0 ? `M ${x} ${y}` : `${acc} L ${x} ${y}`;
     }, '');
-  }, [candles, stepX, minPrice, maxPrice]);
+  }, [visCandles, stepX, visMinPrice, visMaxPrice]);
 
   const createPathFromKey = (key: keyof typeof candles[0]) => {
     let started = false;
     let path = '';
-    candles.forEach((c, i) => {
+    visCandles.forEach((c, j) => {
       const val = c[key] as number | undefined;
       if (val === undefined || isNaN(val)) return;
-      const x = i * stepX;
+      const x = j * stepX;
       const y = getY(val);
       if (!started) {
         path += `M ${x} ${y}`;
@@ -196,13 +317,50 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
   const donchianLowerPath = overlayIndicators.includes('donchian') ? createPathFromKey('donchianLower') : '';
   const donchianMidPath = overlayIndicators.includes('donchian') ? createPathFromKey('donchianMiddle') : '';
 
+  // Feature 2: last-candle close countdown timer
+  const timeframeSeconds: Record<Timeframe, number> = {
+    '1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '4h': 14400, '1D': 86400, '1W': 604800, '1M': 2592000, 'ALL': 0,
+  };
+  const intervalSeconds = timeframeSeconds[activeTimeframe];
+  const lastCandle = candles[candles.length - 1];
+  const lastClose = lastCandle?.close ?? 0;
+  const lastOpen = lastCandle?.open ?? 0;
+  const lastTimestamp = lastCandle?.timestamp ?? 0;
+  const closeTime = lastTimestamp ? lastTimestamp + intervalSeconds * 1000 : 0;
+  const [secondsRemaining, setSecondsRemaining] = useState(0);
+  const lastCandleRef = useRef(lastCandle);
+  lastCandleRef.current = lastCandle;
+
+  const formatRemaining = (sec: number) => {
+    if (sec <= 0) return '00:00';
+    const h = Math.floor(sec / 3600);
+    const m = Math.floor((sec % 3600) / 60);
+    const s = Math.floor(sec % 60);
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (intervalSeconds <= 0 || !lastCandle) { setSecondsRemaining(0); return; }
+    const tick = () => {
+      const lc = lastCandleRef.current;
+      const ct = lc?.timestamp ? lc.timestamp + intervalSeconds * 1000 : 0;
+      let rem = ct - Date.now();
+      if (rem < 0) rem = 0;
+      setSecondsRemaining(rem);
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [intervalSeconds]);
+
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     if (!containerRef.current || !candles.length) return;
+    if (isDragging.current) return;
     const rect = containerRef.current.getBoundingClientRect();
-    const clientX = e.clientX - rect.left;
-    const ratio = Math.max(0, Math.min(1, clientX / rect.width));
-    const approxIndex = Math.round(ratio * (candles.length - 1));
-    const safeIndex = Math.max(0, Math.min(candles.length - 1, approxIndex));
+    const svgX = (e.clientX - rect.left) / rect.width * svgWidth;
+    const ratio = Math.max(0, Math.min(1, svgX / chartWidth));
+    const localIdx = Math.round(ratio * Math.max(0, visLen - 1));
+    const safeIndex = Math.max(0, Math.min(candles.length - 1, off + localIdx));
     setHoverIndex(safeIndex);
     if (onHoverChange) {
       onHoverChange(safeIndex);
@@ -214,6 +372,45 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
     if (onHoverChange) {
       onHoverChange(null);
     }
+  };
+
+  // Feature 4: wheel zoom + drag pan + double-click reset
+  const handleWheel = (e: React.WheelEvent<SVGSVGElement>) => {
+    e.preventDefault();
+    if (!candles.length) return;
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const svgX = (e.nativeEvent.clientX - rect.left) / rect.width * svgWidth;
+    const fraction = Math.max(0, Math.min(1, svgX / chartWidth));
+    const step = Math.max(2, Math.round(effCount * 0.2));
+    const newVc = Math.max(20, Math.min(candles.length, effCount - (e.nativeEvent.deltaY < 0 ? step : -step)));
+    const globalIdx = off + fraction * Math.max(0, effCount - 1);
+    const newLocalIdx = fraction * Math.max(0, newVc - 1);
+    let newOff = Math.round(globalIdx - newLocalIdx);
+    newOff = Math.max(0, Math.min(newOff, Math.max(0, candles.length - newVc)));
+    setVisibleCount(newVc);
+    setOffset(newOff);
+    isDragging.current = false;
+    setHoverIndex(null);
+  };
+
+  const handleMouseDown = (e: React.MouseEvent<SVGSVGElement>) => {
+    if (e.button !== 0 || !candles.length) return;
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartOffset.current = off;
+    dragStartCount.current = effCount;
+    setHoverIndex(null);
+  };
+
+  const handleMouseUp = () => {
+    isDragging.current = false;
+  };
+
+  const handleReset = () => {
+    setVisibleCount(candles.length);
+    setOffset(0);
+    setHoverIndex(null);
   };
 
   return (
@@ -311,6 +508,22 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               </button>
             ))}
           </div>
+
+          {/* Log / Linear Scale Toggle (Feature 3) */}
+          <button
+            onClick={() => setLogScale(!logScale)}
+            title="Toggle logarithmic price scale"
+            className={`px-2 py-0.5 text-[10px] font-mono rounded border transition-colors ${
+              logScale ? 'font-bold' : 'opacity-60 hover:opacity-100'
+            }`}
+            style={{
+              borderColor: logScale ? 'var(--ot-cyan)' : 'var(--ot-border)',
+              backgroundColor: logScale ? 'var(--ot-bg-hover)' : 'transparent',
+              color: logScale ? 'var(--ot-cyan)' : 'var(--ot-text-secondary)',
+            }}
+          >
+            {logScale ? 'LOG' : 'LIN'}
+          </button>
 
           {/* VPVR Toggle Button */}
           <button
@@ -434,6 +647,10 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           preserveAspectRatio="none"
           onMouseMove={handleMouseMove}
           onMouseLeave={handleMouseLeave}
+          onWheel={handleWheel}
+          onMouseDown={handleMouseDown}
+          onMouseUp={handleMouseUp}
+          onDoubleClick={handleReset}
         >
           <defs>
             <linearGradient id="goldAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -446,6 +663,43 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
             </linearGradient>
           </defs>
 
+          {/* Feature 1: Last-price line + right-axis tag */}
+          {lastCandle && (
+            <>
+              <line
+                x1="0"
+                y1={getY(lastClose)}
+                x2={chartWidth}
+                y2={getY(lastClose)}
+                stroke={lastClose >= lastOpen ? 'var(--ot-profit)' : 'var(--ot-loss)'}
+                strokeWidth="1"
+                strokeDasharray="6 3"
+                opacity="0.9"
+              />
+              <g>
+                <rect
+                  x={chartWidth + 6}
+                  y={Math.max(8, Math.min(pricePlotHeight - 10, getY(lastClose))) - 9}
+                  width="76"
+                  height="18"
+                  fill={lastClose >= lastOpen ? 'var(--ot-profit)' : 'var(--ot-loss)'}
+                  rx="3"
+                />
+                <text
+                  x={chartWidth + 44}
+                  y={Math.max(8, Math.min(pricePlotHeight - 10, getY(lastClose))) + 4}
+                  textAnchor="middle"
+                  fill="#07090e"
+                  fontSize="9"
+                  fontFamily="monospace"
+                  fontWeight="bold"
+                >
+                  ${lastClose.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </text>
+              </g>
+            </>
+          )}
+
           {/* Vertical Grid Lines */}
         {Array.from({ length: 8 }).map((_, i) => {
           const x = (chartWidth / 7) * i;
@@ -457,7 +711,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
         {/* Horizontal Price Grid Lines */}
           {[0.1, 0.25, 0.4, 0.55, 0.7, 0.85].map((pct, i) => {
             const y = pricePlotHeight * pct;
-            const priceVal = maxPrice - pct * (maxPrice - minPrice);
+            const priceVal = visMaxPrice - pct * (visMaxPrice - visMinPrice);
             return (
               <g key={`grid-y-${i}`}>
                 <line x1="0" y1={y} x2={chartWidth} y2={y} stroke="rgba(255,255,255,0.06)" strokeWidth="1" />
@@ -480,7 +734,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               const y = getY(lvl.price);
               if (y < 0 || y > pricePlotHeight) return null;
               const maxLvlVol = Math.max(...volumeProfile.levels.map((l) => l.volume), 1);
-              const barWidth = (lvl.volume / maxLvlVol) * 140; // Max 140px width
+              const barWidth = (lvl.volume / maxLvlVol) * 140;
               const barX = chartWidth - barWidth;
 
               return (
@@ -501,7 +755,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           {/* VPVR Key Levels: Point of Control (POC), VAH, VAL */}
           {volumeProfile && (
             <>
-              {/* Point of Control (POC) */}
               <line
                 x1="0"
                 y1={getY(volumeProfile.pocPrice)}
@@ -533,7 +786,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                 POC: ${volumeProfile.pocPrice}
               </text>
 
-              {/* Value Area High (VAH) */}
               <line
                 x1="0"
                 y1={getY(volumeProfile.vahPrice)}
@@ -554,7 +806,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                 VAH (70%): ${volumeProfile.vahPrice}
               </text>
 
-              {/* Value Area Low (VAL) */}
               <line
                 x1="0"
                 y1={getY(volumeProfile.valPrice)}
@@ -580,7 +831,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           {/* Session Liquidity Levels (PDH & PDL) */}
           {sessionLiquidity && sessionLiquidity.pdh > 0 && (
             <>
-              {/* Previous Day High */}
               <line
                 x1="0"
                 y1={getY(sessionLiquidity.pdh)}
@@ -601,7 +851,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                 PDH: ${sessionLiquidity.pdh}
               </text>
 
-              {/* Previous Day Low */}
               <line
                 x1="0"
                 y1={getY(sessionLiquidity.pdl)}
@@ -633,7 +882,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
 
             return (
               <g key={`pos-chart-${pos.id}`}>
-                {/* Entry Price Line */}
                 <line
                   x1="0"
                   y1={entryY}
@@ -664,7 +912,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                   {pos.side.toUpperCase()} {pos.lots}L @ ${pos.entryPrice.toFixed(2)}
                 </text>
 
-                {/* Stop Loss Line */}
                 {slY !== null && slY >= 0 && slY <= pricePlotHeight && (
                   <>
                     <line
@@ -689,7 +936,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                   </>
                 )}
 
-                {/* Take Profit Line */}
                 {tpY !== null && tpY >= 0 && tpY <= pricePlotHeight && (
                   <>
                     <line
@@ -800,7 +1046,6 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
           {vwapPath && <path d={vwapPath} fill="none" stroke="#e879f9" strokeWidth="1.3" strokeDasharray="4 2" opacity="0.9" />}
 
           {/* Phase II: Advanced Indicators Overlay Paths */}
-          {/* Ichimoku Kinko Hyo: Tenkan (red), Kijun (blue), Senkou A/B (cloud) */}
           {tenkanPath && <path d={tenkanPath} fill="none" stroke="var(--ot-loss)" strokeWidth="1.2" opacity="0.9" />}
           {kijunPath && <path d={kijunPath} fill="none" stroke="#3b82f6" strokeWidth="1.2" opacity="0.9" />}
           {senkouAPath && <path d={senkouAPath} fill="none" stroke="#22c55e" strokeWidth="1" strokeDasharray="3 2" opacity="0.8" />}
@@ -829,6 +1074,32 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
             </>
           )}
 
+          {/* Feature 2: Candle close countdown badge (top-right) */}
+          {lastCandle && intervalSeconds > 0 && (
+            <g>
+              <rect
+                x={chartWidth - 150}
+                y={8}
+                width="140"
+                height="20"
+                fill="var(--ot-bg-surface)"
+                stroke="var(--ot-border)"
+                strokeWidth="1"
+                rx="3"
+              />
+              <text
+                x={chartWidth - 144}
+                y={24}
+                fill="var(--ot-cyan)"
+                fontSize="10"
+                fontFamily="monospace"
+                fontWeight="bold"
+              >
+                Closes in {formatRemaining(secondsRemaining)}
+              </text>
+            </g>
+          )}
+
           {/* Watermark */}
           <text
             x={chartWidth / 2}
@@ -845,40 +1116,52 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
             {activeSymbol}  OpenTerminal
           </text>
 
-          {/* Volume Histogram (bottom band) */}
-          {candles.map((c, i) => {
-            const x = i * stepX;
-            const isUp = c.close >= c.open;
-            const color = isUp ? 'var(--ot-profit)' : 'var(--ot-loss)';
-            const volH = maxVol > 0 ? ((c.volume || 0) / maxVol) * (pricePlotHeight * 0.16) : 0;
-            const barW = Math.max(2, stepX * 0.6);
-            return (
-              <rect
-                key={'vol-'+i}
-                x={x - barW / 2}
-                y={pricePlotHeight - volH}
-                width={barW}
-                height={volH}
-                fill={color}
-                opacity="0.45"
+          {/* Volume Histogram (bottom band) + Feature 6: Volume MA overlay */}
+          <g>
+            {visCandles.map((c, j) => {
+              const x = j * stepX;
+              const isUp = c.close >= c.open;
+              const color = isUp ? 'var(--ot-profit)' : 'var(--ot-loss)';
+              const volH = visMaxVol > 0 ? ((c.volume || 0) / visMaxVol) * (pricePlotHeight * 0.16) : 0;
+              const barW = Math.max(2, stepX * 0.6);
+              return (
+                <rect
+                  key={'vol-'+(off + j)}
+                  x={x - barW / 2}
+                  y={pricePlotHeight - volH}
+                  width={barW}
+                  height={volH}
+                  fill={color}
+                  opacity="0.45"
+                />
+              );
+            })}
+            {volSma20.some((v) => v != null) && (
+              <path
+                d={volMaPath}
+                fill="none"
+                stroke="var(--ot-amber)"
+                strokeWidth="1"
+                opacity="0.8"
+                strokeDasharray="2 2"
               />
-            );
-          })}
+            )}
+          </g>
 
-          {/* Candlesticks & Price Action Rendering */}
+          {/* Candlesticks & Price Action Rendering (visible slice) */}
           {chartStyle === 'area' ? (
             <>
               <path d={linePath} fill="none" stroke="var(--ot-amber)" strokeWidth="2" />
               <path
-                d={`${linePath} L ${(candles.length - 1) * stepX} ${pricePlotHeight} L 0 ${pricePlotHeight} Z`}
+                d={`${linePath} L ${Math.max(0, visLen - 1) * stepX} ${pricePlotHeight} L 0 ${pricePlotHeight} Z`}
                 fill="url(#goldAreaGrad)"
               />
             </>
           ) : chartStyle === 'line' ? (
             <path d={linePath} fill="none" stroke="var(--ot-cyan)" strokeWidth="2" />
           ) : chartStyle === 'bar' ? (
-            candles.map((c, i) => {
-              const x = i * stepX;
+            visCandles.map((c, j) => {
+              const x = j * stepX;
               const isUp = c.close >= c.open;
               const color = isUp ? 'var(--ot-profit)' : 'var(--ot-loss)';
               const openY = getY(c.open);
@@ -886,7 +1169,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               const highY = getY(c.high);
               const lowY = getY(c.low);
               return (
-                <g key={`bar-${i}`}>
+                <g key={`bar-${off + j}`}>
                   <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth="1" />
                   <line x1={x - 3} y1={openY} x2={x} y2={openY} stroke={color} strokeWidth="1" />
                   <line x1={x} y1={closeY} x2={x + 3} y2={closeY} stroke={color} strokeWidth="1" />
@@ -894,8 +1177,8 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               );
             })
           ) : (
-            candles.map((c, i) => {
-              const x = i * stepX;
+            visCandles.map((c, j) => {
+              const x = j * stepX;
               const isUp = c.close >= c.open;
               const color = isUp ? 'var(--ot-profit)' : 'var(--ot-loss)';
               const candleTop = getY(Math.max(c.open, c.close));
@@ -906,7 +1189,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               const candleWidth = Math.max(3, stepX * 0.7);
 
               return (
-                <g key={`candle-${i}`}>
+                <g key={`candle-${off + j}`}>
                   <line x1={x} y1={highY} x2={x} y2={lowY} stroke={color} strokeWidth="1" />
                   <rect
                     x={x - candleWidth / 2}
@@ -934,11 +1217,11 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                   <line x1="0" y1="65" x2={chartWidth} y2="65" stroke="var(--ot-profit)" strokeDasharray="2 2" strokeWidth="0.8" opacity="0.6" />
                   <text x={chartWidth + 6} y="68" fill="var(--ot-profit)" fontSize="9" fontFamily="monospace">30</text>
                   <path
-                    d={candles.reduce((acc, c, i) => {
+                    d={visCandles.reduce((acc, c, j) => {
                       const rsiVal = c.rsi ?? 50;
                       const y = subPlotHeight - (rsiVal / 100) * subPlotHeight;
-                      const x = i * stepX;
-                      return i === 0 ? `M ${x} ${y}` : `${acc} L ${x} ${y}`;
+                      const x = j * stepX;
+                      return j === 0 ? `M ${x} ${y}` : `${acc} L ${x} ${y}`;
                     }, '')}
                     fill="none"
                     stroke="var(--ot-cyan)"
@@ -946,16 +1229,62 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                   />
                 </>
               )}
+              {subPaneIndicator === 'macd' && (
+                <>
+                  <text x="6" y="14" fill="var(--ot-cyan)" fontSize="9" fontFamily="monospace">MACD (12,26,9)</text>
+                  <line x1="0" y1={macdZeroY} x2={chartWidth} y2={macdZeroY} stroke="var(--ot-border)" strokeWidth="1" opacity="0.4" />
+                  {macdData.map((d, j) => {
+                    if (d.histogram == null) return null;
+                    const barW = Math.max(2, stepX * 0.6);
+                    const y = macdValY(d.histogram);
+                    const top = d.histogram >= 0 ? y : macdZeroY;
+                    const height = Math.abs(macdZeroY - y);
+                    return (
+                      <rect
+                        key={'macdh-' + (off + j)}
+                        x={j * stepX - barW / 2}
+                        y={top}
+                        width={barW}
+                        height={Math.max(1, height)}
+                        fill={d.histogram >= 0 ? 'var(--ot-profit)' : 'var(--ot-loss)'}
+                        opacity="0.6"
+                      />
+                    );
+                  })}
+                  <path
+                    d={macdData.reduce((acc, d, j) => {
+                      if (d.macd == null) return acc;
+                      const x = j * stepX;
+                      const y = macdValY(d.macd);
+                      return `${acc}${acc ? ' L' : 'M'} ${x} ${y}`;
+                    }, '')}
+                    fill="none"
+                    stroke="var(--ot-cyan)"
+                    strokeWidth="1.2"
+                  />
+                  <path
+                    d={macdData.reduce((acc, d, j) => {
+                      if (d.signal == null) return acc;
+                      const x = j * stepX;
+                      const y = macdValY(d.signal);
+                      return `${acc}${acc ? ' L' : 'M'} ${x} ${y}`;
+                    }, '')}
+                    fill="none"
+                    stroke="var(--ot-amber)"
+                    strokeWidth="1.1"
+                  />
+                </>
+              )}
             </g>
           )}
 
           {/* Crosshair Cursor */}
-          {effectiveHoverIndex !== null && candles[effectiveHoverIndex] && (
+          {effectiveHoverIndex !== null && candles[effectiveHoverIndex] && effectiveHoverIndex >= off && effectiveHoverIndex < off + visLen && (
             <g>
               <line
-                x1={effectiveHoverIndex * stepX}
+                x1={(effectiveHoverIndex - off) * stepX}
                 y1="0"
-                x2={effectiveHoverIndex * stepX}
+                x2={(effectiveHoverIndex - off) * stepX}
                 y2={totalHeight}
                 stroke="var(--ot-cyan)"
                 strokeDasharray="2 2"
@@ -991,9 +1320,9 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               >
                 {candles[effectiveHoverIndex].close.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </text>
-              <circle cx={effectiveHoverIndex * stepX} cy={getY(candles[effectiveHoverIndex].close)} r="3.5" fill="var(--ot-amber)" />
+              <circle cx={(effectiveHoverIndex - off) * stepX} cy={getY(candles[effectiveHoverIndex].close)} r="3.5" fill="var(--ot-amber)" />
               <rect
-                x={effectiveHoverIndex * stepX - 35}
+                x={(effectiveHoverIndex - off) * stepX - 35}
                 y={totalHeight - 16}
                 width="70"
                 height="15"
@@ -1002,7 +1331,7 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
                 rx="2"
               />
               <text
-                x={effectiveHoverIndex * stepX}
+                x={(effectiveHoverIndex - off) * stepX}
                 y={totalHeight - 5}
                 textAnchor="middle"
                 fill="var(--ot-cyan)"
@@ -1013,15 +1342,15 @@ export const ChartWidget: React.FC<ChartWidgetProps> = ({
               </text>
             </g>
           )}
-          {/* X-axis time labels */}
+          {/* X-axis time labels (visible slice) */}
           {(() => {
             const n = 6;
             const out = [];
             for (let i = 0; i < n; i++) {
-              const ci = Math.round((i / (n - 1)) * (candles.length - 1));
-              const c = candles[ci];
+              const localIdx = Math.round((i / (n - 1)) * Math.max(0, visLen - 1));
+              const c = visCandles[localIdx];
               if (!c) continue;
-              const x = ci * stepX;
+              const x = localIdx * stepX;
               out.push(
                 <text key={'xt-'+i} x={x} y={pricePlotHeight + 12} textAnchor="middle" fill="var(--ot-text-muted)" fontSize="9" fontFamily="monospace">
                   {c.time}
